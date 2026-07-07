@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.DS_Store
+Assets/.DS_Store
+
+# Local recording outputs can get large quickly.
+Assets/take_*.mp4
+Assets/take_*.webm
+Assets/take_*.json
+Assets/take_*_png_seq.zip
+tool/take_*
