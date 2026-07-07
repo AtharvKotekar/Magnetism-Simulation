@@ -67,7 +67,7 @@ export function buildPanel(root, app) {
     slider(b, 'Clumpiness', 0, 1, 0.05, app.params.sprinkleClump, '', (v) => {
       app.params.sprinkleClump = v;
     });
-    slider(b, 'Median length', 0.2, 1.0, 0.05, app.params.filingMedianL * 1e3, ' mm', (v) => {
+    slider(b, 'Median length', 0.15, 1.0, 0.05, app.params.filingMedianL * 1e3, ' mm', (v) => {
       app.params.filingMedianL = v * 1e-3;
       app.pushParams({ filingMedianL: app.params.filingMedianL });
       app.refreshDiagnostics();
@@ -111,14 +111,29 @@ export function buildPanel(root, app) {
     check(b, 'Board vibration cue', app.ui.tapVibration, (v) => { app.ui.tapVibration = v; });
   }
 
-  // ---------- MOTION CHEAT ----------
+  // ---------- FIELD RESPONSE ----------
   {
-    const b = S('MOTION CHEAT');
+    const b = S('FIELD RESPONSE');
     check(b, 'Current can move pattern before tap', app.params.currentAutoAlign, (v) => {
       app.params.currentAutoAlign = v; app.pushParams({ currentAutoAlign: v });
     });
     slider(b, 'Current motion', 0, 1.5, 0.05, app.params.currentMotion, '×', (v) => {
       app.params.currentMotion = v; app.pushParams({ currentMotion: v });
+    });
+    slider(b, 'Affected radius', 0.04, 0.17, 0.005, app.params.fieldReach30A, ' m', (v) => {
+      app.params.fieldReach30A = v; app.pushParams({ fieldReach30A: v });
+    });
+    slider(b, '1/r falloff', 0.5, 2.2, 0.05, app.params.fieldFalloffPower, '', (v) => {
+      app.params.fieldFalloffPower = v; app.pushParams({ fieldFalloffPower: v });
+    });
+    slider(b, 'Ring spacing', 3, 10, 0.25, app.params.chainSpacing * 1000, ' mm', (v) => {
+      app.params.chainSpacing = v * 1e-3; app.pushParams({ chainSpacing: app.params.chainSpacing });
+    });
+    slider(b, 'Chain strength', 0, 2, 0.05, app.params.chainStrength, '×', (v) => {
+      app.params.chainStrength = v; app.pushParams({ chainStrength: v });
+    });
+    slider(b, 'Inward pull', 0, 8, 0.25, app.params.inwardPull * 1000, ' mm', (v) => {
+      app.params.inwardPull = v * 1e-3; app.pushParams({ inwardPull: app.params.inwardPull });
     });
     slider(b, 'Friction / stickiness', 0, 1, 0.05, app.params.visualFriction, '', (v) => {
       app.params.visualFriction = v; app.pushParams({ visualFriction: v });
@@ -132,7 +147,7 @@ export function buildPanel(root, app) {
     slider(b, 'Rotation speed', 1, 16, 0.25, app.params.rotateSpeed, '×', (v) => {
       app.params.rotateSpeed = v; app.pushParams({ rotateSpeed: v });
     });
-    hint(b, 'Lower friction lets filings slide into arcs after a tap. Higher friction keeps more of the motion as rotation.');
+    hint(b, 'The outer edge of the affected radius stays still even when the board is tapped.');
   }
 
   // ---------- VIEW ----------
@@ -146,6 +161,9 @@ export function buildPanel(root, app) {
     ], app.ui.renderStyle, (v) => { app.ui.renderStyle = v; });
     slider(b, 'Filing visibility', 0.5, 2, 0.05, app.ui.filingVisibility, '×', (v) => {
       app.ui.filingVisibility = v;
+    });
+    slider(b, 'Stroke thickness', 0.35, 1.6, 0.05, app.ui.filingThickness, '×', (v) => {
+      app.ui.filingThickness = v;
     });
     select(b, 'Preview density', [
       ['1', 'full'],
@@ -240,13 +258,12 @@ export function buildPanel(root, app) {
 
 export function diagnosticsHTML(app, stats) {
   const p = app.params;
-  const reach = Math.min(p.sheetW, p.sheetH) * 0.48;
   const fmt = (x, u = '') => `<b>${x}</b>${u}`;
   return [
     `sim time ${fmt(stats.time.toFixed(2), ' s')} · awake ${fmt(stats.awake)} / ${fmt(stats.count)}`,
     `I(t) = ${fmt(stats.current.toFixed(1), ' A')}`,
-    `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} cheated filings, no pair physics`,
-    `max field reach: ${fmt((reach * 1000).toFixed(0), ' mm')} · friction ${fmt(p.visualFriction.toFixed(2))}`,
+    `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} field-responsive filings`,
+    `affected radius: ${fmt((p.fieldReach30A * 1000).toFixed(0), ' mm')} @ 30 A · friction ${fmt(p.visualFriction.toFixed(2))}`,
     `worker: ${fmt(stats.stepMs.toFixed(1), ' ms')}/frame · preview ${fmt(stats.fps.toFixed(0), ' fps')}`,
     stats.rendered && stats.rendered < stats.count
       ? `preview drawing ${fmt(stats.rendered.toLocaleString())} / ${fmt(stats.count.toLocaleString())} filings`

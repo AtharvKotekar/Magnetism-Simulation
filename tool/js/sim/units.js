@@ -38,24 +38,31 @@ export const DEFAULT_PARAMS = {
   ambientAngle: 0.6,      // rad, in-plane direction
 
   // --- filings material/geometry ---
-  filingMedianL: 0.65e-3, // m
-  filingSigmaLn: 0.25,
-  filingMinL: 0.22e-3,
-  filingMaxL: 1.35e-3,
-  aspectMin: 3,
-  aspectMax: 7,
+  filingMedianL: 0.50e-3, // m
+  filingSigmaLn: 0.22,
+  filingMinL: 0.16e-3,
+  filingMaxL: 1.05e-3,
+  aspectMin: 4,
+  aspectMax: 9,
   remanenceFrac: 0.01,    // f_r · Ms remanent magnetization along axis
   coerciveH: 250,         // A/m, |H∥| above this re-sets remanence sign
-  chainStrength: 1.0,     // artistic multiplier on dipole–dipole interactions
 
   // --- visual animator cheats ---
-  maxVisualParticles: 12000,
+  maxVisualParticles: 18000,
   currentAutoAlign: false,// first current-on waits for tap; later increases move
-  currentMotion: 0.8,     // how strongly current changes push the pattern
-  visualFriction: 0.35,   // 0 = slides freely, 1 = mostly rotates in place
-  slideAmount: 1.4,       // artistic multiplier for visible translation
-  alignSpeed: 3.5,        // position interpolation speed
-  rotateSpeed: 6.5,       // angle interpolation speed
+  currentMotion: 0.72,    // how strongly current changes push the pattern
+  visualFriction: 0.42,   // 0 = slides freely, 1 = mostly rotates in place
+  slideAmount: 1.1,       // artistic multiplier for visible translation
+  fieldReach30A: 0.145,   // m, hard affected radius at 30 A
+  fieldReferenceR: 0.058, // m, normalizes the 1/r response strength
+  fieldFalloffPower: 0.95,
+  fieldMinResponse: 0.006,
+  chainSpacing: 0.0056,   // m, radial spacing between visible filing bands
+  chainCapture: 0.96,     // how strongly filings snap toward chain bands
+  chainStrength: 1.35,    // magnetized-neighbor chaining multiplier
+  inwardPull: 0.0065,     // m, slight gradient drift toward stronger field
+  alignSpeed: 3.8,        // position interpolation speed
+  rotateSpeed: 6.8,       // angle interpolation speed
 
   // --- contact & friction ---
   muS: 0.5,
@@ -74,10 +81,10 @@ export const DEFAULT_PARAMS = {
   neighborCutoff: 3.0e-3, // m, dipole interaction radius (= hash cell size)
 
   // --- sprinkle defaults ---
-  sprinkleCount: 6500,
-  sprinkleR: 0.13,        // m, disk radius around hole
+  sprinkleCount: 11000,
+  sprinkleR: 0.17,        // m, disk radius around hole
   sprinklePattern: 'disk',// 'disk' | 'ring' | 'sheet'
-  sprinkleClump: 0.32,    // 0 = uniform Poisson, 1 = heavily clustered
+  sprinkleClump: 0.03,    // 0 = uniform Poisson, 1 = heavily clustered
 
   seed: 1337,
 };

@@ -225,6 +225,7 @@ uniform float uDetJHole;
 uniform vec2 uJitterPx;
 uniform float uLiftScale;
 uniform float uVisibility;
+uniform float uThickness;
 
 out vec2 vLocal;
 out vec2 vHalf;
@@ -256,8 +257,9 @@ void main() {
   vec2 nrm = vec2(-axis.y, axis.x);
 
   float vis = clamp(uVisibility, 0.0, 2.0) * 0.5;
-  float halfLen = max(physicalLenPx * mix(1.25, 2.2, vis), mix(4.8, 10.5, vis));
-  float halfWid = mix(1.05, 2.35, vis);
+  float thick = clamp(uThickness, 0.35, 2.0);
+  float halfLen = max(physicalLenPx * mix(0.9, 1.65, vis), mix(3.4, 7.8, vis));
+  float halfWid = mix(0.62, 1.55, vis) * thick;
   vec2 px = center + axis * (aCorner.x * halfLen) + nrm * (aCorner.y * halfWid);
   px += uUpDir * (aPos.z * uKUp * scale * uLiftScale) + uJitterPx;
 
@@ -333,7 +335,7 @@ export class FilingRenderer {
     this.lu = uniformMap(gl, this.lineProg,
       ['uH', 'uRes', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightColor',
        'uBaseColor', 'uCardboard', 'uClipToCardboard', 'uJitterPx',
-       'uLiftScale', 'uVisibility']);
+       'uLiftScale', 'uVisibility', 'uThickness']);
   }
 
   buildVAOs() {
@@ -448,6 +450,7 @@ export class FilingRenderer {
     gl.uniform2f(this.lu.uJitterPx, o.jitterPx[0], o.jitterPx[1]);
     gl.uniform1f(this.lu.uLiftScale, o.liftScale ?? 1);
     gl.uniform1f(this.lu.uVisibility, o.filingVisibility ?? 1);
+    gl.uniform1f(this.lu.uThickness, o.filingThickness ?? 1);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, o.cardboardTex);
     gl.uniform1i(this.lu.uCardboard, 1);

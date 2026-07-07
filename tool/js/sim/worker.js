@@ -4,8 +4,7 @@
 // granular physics solver. We keep the old render-buffer contract so the WebGL
 // renderer and recorder still work, but the worker now drives a simple,
 // deterministic stage animation:
-//   random sprinkle -> tap/current impulse -> tangential circular translation
-//   and alignment.
+//   uniform sprinkle -> local 1/r field response -> broken circular chains.
 
 import { TimelineRunner } from './timeline.js';
 import { DEFAULT_PARAMS } from './units.js';
@@ -15,6 +14,7 @@ const FLOATS_PER = 8;
 const ASLEEP = 0;
 const AWAKE = 1;
 const PI2 = Math.PI * 2;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 let engine = null;
 let timeline = null;
@@ -151,19 +151,19 @@ class VisualEngine {
     this.hasTapped = false;
 
     const centers = [];
-    const nCenters = Math.max(6, Math.round(12 + 40 * clump));
+    const nCenters = Math.max(5, Math.round(6 + 24 * clump));
     for (let c = 0; c < nCenters; c++) centers.push(samplePoint(rng, pattern, p, radius));
-    const spread = 0.006 + 0.012 * (1 - clump);
+    const spread = 0.010 + 0.016 * (1 - clump);
 
     let placed = 0;
     while (placed < count) {
       let x, y;
-      if (rng.f() < 0.35) {
-        [x, y] = samplePoint(rng, pattern, p, radius);
-      } else {
+      if (rng.f() < clump * 0.45) {
         const c = centers[rng.u32() % centers.length];
-        x = c[0] + rng.normal() * spread;
-        y = c[1] + rng.normal() * spread;
+        x = c[0] + rng.normal() * spread * clump;
+        y = c[1] + rng.normal() * spread * clump;
+      } else {
+        [x, y] = sampleStratifiedPoint(rng, pattern, p, radius, placed, count, clump);
       }
       x = clamp(x, 0.008, p.sheetW - 0.008);
       y = clamp(y, 0.008, p.sheetH - 0.008);
@@ -209,12 +209,15 @@ class VisualEngine {
       const impulse = clamp((0.28 + 0.68 * currentFactor) * tapFactor, 0.18, 1.0);
       this.updateTargets(impulse);
     }
-    this.wakeFor(1.15 + 0.35 * tapFactor);
 
     const st = this.st;
+    const until = this.time + 1.15 + 0.35 * tapFactor;
     for (let i = 0; i < st.n; i++) {
-      st.hop[i] = (0.0012 + 0.0032 * this.rng.f()) * tapFactor;
+      const response = fieldActive ? responseMask(st.fieldResponse[i], this.p) : 1;
+      st.tapMask[i] = response;
+      st.hop[i] = (0.0008 + 0.0028 * this.rng.f()) * tapFactor * Math.sqrt(response);
       st.tapPhase[i] = this.rng.range(0, PI2);
+      if (response > 0.02) st.awakeUntil[i] = Math.max(st.awakeUntil[i], until);
     }
   }
 
@@ -228,39 +231,58 @@ class VisualEngine {
 
   currentReach() {
     const a = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
-    return clamp(0.038 + 0.0024 * a, 0.035, Math.min(this.p.sheetW, this.p.sheetH) * 0.48);
+    const base = this.p.fieldReach30A ?? 0.12;
+    const scale = Math.sqrt(Math.max(0, a) / 30);
+    return clamp(base * scale, this.p.holeWallR + 0.018, Math.min(this.p.sheetW, this.p.sheetH) * 0.49);
   }
 
   updateTargets(impulse) {
     const st = this.st, p = this.p;
     const reach = this.currentReach();
     const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
-    const ringSpacing = clamp(0.010 - currentAbs * 0.000025, 0.0065, 0.011);
+    const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
+    const ringSpacing = clamp((p.chainSpacing ?? 0.0065) * (1.03 - 0.08 * currentScale), 0.0038, 0.010);
     const direction = p.currentDir < 0 ? -1 : 1;
-    const friction = clamp01(p.visualFriction ?? 0.45);
+    const friction = clamp01(p.visualFriction ?? 0.48);
     const slide = clamp01((1 - friction) * (p.slideAmount ?? 1.0));
-    const slideGain = slide * clamp(0.35 + impulse * 0.85, 0.35, 1.2);
+    const slideGain = slide * clamp(0.30 + impulse * 0.78, 0.30, 1.05);
     for (let i = 0; i < st.n; i++) {
       const bx = st.baseX[i], by = st.baseY[i];
       const dx = bx - p.holeX, dy = by - p.holeY;
       const r = Math.max(Math.hypot(dx, dy), p.holeWallR + 0.002);
       const theta = Math.atan2(dy, dx);
-      const inside = clamp01((reach - r) / Math.max(0.001, reach * 0.75));
-      const desired = inside * inside * (3 - 2 * inside);
-      const ring = Math.round((r + st.ringNoise[i] * ringSpacing) / ringSpacing) * ringSpacing;
-      const radialNudge = (ring - r) * (0.22 + 0.74 * slideGain) +
-        st.ringNoise[i] * reach * 0.032 * desired * slideGain;
-      const orbitNudge = st.thetaDrift[i] * desired * slideGain *
-        clamp(0.20 + currentAbs / 180, 0.20, 0.42);
+      const field = fieldInfluence(r, currentAbs, reach, p);
+      const desired = responseMask(field, p) * st.chainGain[i];
+      st.fieldResponse[i] = field;
+      if (desired <= 0.001) {
+        st.targetX[i] = st.baseX[i];
+        st.targetY[i] = st.baseY[i];
+        st.targetAng[i] = st.ang[i];
+        st.targetAlign[i] *= 0.92;
+        continue;
+      }
+
+      const ringNoise = st.ringNoise[i] * 0.34 + Math.sin(theta * 5.0 + st.chainPhase[i]) * 0.10;
+      const ringIndex = Math.round((r + ringNoise * ringSpacing) / ringSpacing);
+      const ring = ringIndex * ringSpacing;
+      const maze = 0.72 + 0.28 * Math.sin(ringIndex * 1.73 + theta * 11.0 + st.chainPhase[i]);
+      const chain = clamp01(desired * (p.chainStrength ?? 1.0) * maze);
+      const radialToBand = (ring - r) * (p.chainCapture ?? 0.85) * chain * (1.16 + 0.42 * slideGain);
+      const inwardLimit = Math.max(0, r - (p.holeWallR + 0.006));
+      const inward = -Math.min(inwardLimit, (p.inwardPull ?? 0.003) * currentScale * chain * impulse);
+      const grain = st.ringNoise[i] * ringSpacing * 0.22 * (1 - chain);
+      const radialNudge = radialToBand + inward + grain;
+      const orbitNudge = (st.thetaDrift[i] * 0.070 + Math.sin(st.chainPhase[i] + ringIndex) * 0.016) *
+        chain * slideGain;
       const rArc = clamp(r + radialNudge,
         p.holeWallR + 0.004, Math.min(p.sheetW, p.sheetH) * 0.5);
       const thetaArc = theta + orbitNudge;
       st.targetX[i] = p.holeX + Math.cos(thetaArc) * rArc;
       st.targetY[i] = p.holeY + Math.sin(thetaArc) * rArc;
       st.targetAng[i] = theta + direction * Math.PI / 2 +
-        st.angleNoise[i] * (0.34 - 0.26 * desired);
-      st.targetAlign[i] = Math.max(st.targetAlign[i], desired * impulse);
-      if (desired * impulse > 0.04) st.state[i] = AWAKE;
+        st.angleNoise[i] * (0.46 - 0.40 * chain);
+      st.targetAlign[i] = Math.max(st.targetAlign[i] * 0.985, clamp01(chain * impulse * (0.90 + 0.35 * slideGain)));
+      if (chain * impulse > 0.025) st.state[i] = AWAKE;
     }
   }
 
@@ -307,7 +329,8 @@ class VisualEngine {
       if (Math.abs(this.current.value) < 0.1 && !tapLive) st.targetAlign[i] *= 0.998;
       st.align[i] += (st.targetAlign[i] - st.align[i]) * follow;
       const a = clamp01(st.align[i]);
-      const wob = tapEnv * (0.0012 + 0.00008 * this.lastTapStrength);
+      const tapMask = st.tapMask[i];
+      const wob = tapEnv * (0.0010 + 0.00007 * this.lastTapStrength) * tapMask;
       const wobX = tapLive ? Math.sin(tapAge * 38 + st.tapPhase[i]) * wob * st.ringNoise[i] : 0;
       const wobY = tapLive ? Math.cos(tapAge * 31 + st.tapPhase[i]) * wob * st.thetaDrift[i] : 0;
       st.px[i] = lerp(st.baseX[i], st.targetX[i], a) + wobX;
@@ -315,7 +338,8 @@ class VisualEngine {
       st.pz[i] = tapEnv * st.hop[i];
       st.ang[i] += wrapAngle(st.targetAng[i] - st.ang[i]) * rotateFollow * (0.25 + 0.75 * a);
 
-      const moving = Math.abs(st.targetAlign[i] - st.align[i]) > 0.012 || tapLive || this.time < st.awakeUntil[i];
+      const moving = Math.abs(st.targetAlign[i] - st.align[i]) > 0.012 ||
+        (tapLive && tapMask > 0.02) || this.time < st.awakeUntil[i];
       st.state[i] = moving ? AWAKE : ASLEEP;
       if (moving) awake++;
     }
@@ -335,6 +359,7 @@ class VisualState {
     this.align = F(); this.targetAlign = F();
     this.hop = F(); this.tapPhase = F();
     this.ringNoise = F(); this.thetaDrift = F(); this.angleNoise = F();
+    this.chainPhase = F(); this.chainGain = F(); this.fieldResponse = F(); this.tapMask = F();
     this.awakeUntil = F();
     this.state = new Uint8Array(maxN);
   }
@@ -360,9 +385,36 @@ class VisualState {
     this.ringNoise[i] = rng.range(-1, 1);
     this.thetaDrift[i] = rng.range(-1, 1);
     this.angleNoise[i] = rng.normal() * 0.7;
+    this.chainPhase[i] = rng.range(0, PI2);
+    this.chainGain[i] = rng.range(0.82, 1.12);
+    this.fieldResponse[i] = 0;
+    this.tapMask[i] = 0;
     this.awakeUntil[i] = 0;
     this.state[i] = AWAKE;
   }
+}
+
+function sampleStratifiedPoint(rng, pattern, p, R, i, n, clump) {
+  if (pattern === 'sheet') {
+    const cols = Math.ceil(Math.sqrt(n * p.sheetW / p.sheetH));
+    const rows = Math.ceil(n / cols);
+    const cx = i % cols, cy = Math.floor(i / cols);
+    const jx = rng.range(-0.38, 0.38), jy = rng.range(-0.38, 0.38);
+    return [
+      clamp((cx + 0.5 + jx) / cols * p.sheetW, 0.012, p.sheetW - 0.012),
+      clamp((cy + 0.5 + jy) / rows * p.sheetH, 0.012, p.sheetH - 0.012),
+    ];
+  }
+  if (pattern === 'ring') {
+    const r = R * (0.58 + 0.42 * ((i + 0.5 + rng.range(-0.25, 0.25)) / n));
+    const a = i * GOLDEN_ANGLE + rng.range(-0.10, 0.10);
+    return [p.holeX + r * Math.cos(a), p.holeY + r * Math.sin(a)];
+  }
+  const jitter = rng.range(-0.30, 0.30) * (0.8 + clump);
+  const u = clamp((i + 0.5 + jitter) / n, 0.0001, 0.9999);
+  const r = R * Math.sqrt(u);
+  const a = i * GOLDEN_ANGLE + rng.range(-0.16, 0.16);
+  return [p.holeX + r * Math.cos(a), p.holeY + r * Math.sin(a)];
 }
 
 function samplePoint(rng, pattern, p, R) {
@@ -380,10 +432,26 @@ function samplePoint(rng, pattern, p, R) {
   return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
 }
 
+function fieldInfluence(r, currentAbs, reach, p) {
+  if (currentAbs <= 0.1 || r >= reach) return 0;
+  const inner = p.holeWallR + 0.004;
+  const edgeBand = Math.max(0.012, reach * 0.34);
+  const edge = smooth01((reach - r) / edgeBand);
+  const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
+  const invR = clamp((p.fieldReferenceR ?? 0.058) * currentScale / Math.max(inner, r), 0, 1);
+  return clamp01(edge * Math.pow(invR, p.fieldFalloffPower ?? 1.1));
+}
+
+function responseMask(field, p) {
+  const min = p.fieldMinResponse ?? 0.04;
+  return field <= min ? 0 : smooth01((field - min) / Math.max(1e-5, 1 - min));
+}
+
 function expInterval(rng, rate) {
   return -Math.log(1 - rng.f()) / rate;
 }
 
+function smooth01(x) { x = clamp01(x); return x * x * (3 - 2 * x); }
 function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
 function lerp(a, b, t) { return a + (b - a) * t; }
