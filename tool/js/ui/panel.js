@@ -2,7 +2,6 @@
 // `app` is the orchestrator from main.js (owns params, worker, renderer, ui prefs).
 
 import { PRESETS } from './presets.js';
-import { MU0, G, RHO_IRON } from '../sim/units.js';
 
 export function buildPanel(root, app) {
   root.innerHTML = '';
@@ -57,7 +56,7 @@ export function buildPanel(root, app) {
   // ---------- FILINGS ----------
   {
     const b = S('FILINGS');
-    slider(b, 'Sprinkle count', 1000, 80000, 500, app.params.sprinkleCount, '', (v) => {
+    slider(b, 'Visible filings', 500, app.params.maxVisualParticles, 100, app.params.sprinkleCount, '', (v) => {
       app.params.sprinkleCount = v;
     });
     select(b, 'Pattern', [['disk', 'disk around wire'], ['ring', 'ring'], ['sheet', 'whole sheet']],
@@ -112,30 +111,23 @@ export function buildPanel(root, app) {
     check(b, 'Board vibration cue', app.ui.tapVibration, (v) => { app.ui.tapVibration = v; });
   }
 
-  // ---------- PHYSICS ----------
+  // ---------- MOTION CHEAT ----------
   {
-    const b = S('PHYSICS', false);
-    slider(b, 'Static friction μs', 0.1, 1.2, 0.02, app.params.muS, '', (v) => {
-      app.params.muS = v; app.pushParams({ muS: v }); app.refreshDiagnostics();
+    const b = S('MOTION CHEAT');
+    check(b, 'Current can move pattern before tap', app.params.currentAutoAlign, (v) => {
+      app.params.currentAutoAlign = v; app.pushParams({ currentAutoAlign: v });
     });
-    slider(b, 'Kinetic friction μk', 0.05, 1.0, 0.02, app.params.muK, '', (v) => {
-      app.params.muK = v; app.pushParams({ muK: v });
+    slider(b, 'Current motion', 0, 1.5, 0.05, app.params.currentMotion, '×', (v) => {
+      app.params.currentMotion = v; app.pushParams({ currentMotion: v });
     });
-    slider(b, 'Remanence f_r', 0, 0.05, 0.002, app.params.remanenceFrac, '', (v) => {
-      app.params.remanenceFrac = v; app.pushParams({ remanenceFrac: v });
+    slider(b, 'Alignment speed', 1, 12, 0.25, app.params.alignSpeed, '×', (v) => {
+      app.params.alignSpeed = v; app.pushParams({ alignSpeed: v });
     });
-    slider(b, 'Chain strength', 0, 3, 0.1, app.params.chainStrength, '×', (v) => {
-      app.params.chainStrength = v; app.pushParams({ chainStrength: v });
+    slider(b, 'Rotation speed', 1, 16, 0.25, app.params.rotateSpeed, '×', (v) => {
+      app.params.rotateSpeed = v; app.pushParams({ rotateSpeed: v });
     });
-    check(b, 'Ambient (Earth) field', app.params.ambientOn, (v) => {
-      app.params.ambientOn = v; app.pushParams({ ambientOn: v });
-    });
-    slider(b, 'Ambient angle', 0, 6.28, 0.05, app.params.ambientAngle, ' rad', (v) => {
-      app.params.ambientAngle = v; app.pushParams({ ambientAngle: v });
-    });
-    hint(b, 'Physically-honest note: with pure induced magnetization a DC ' +
-      'reversal is invisible (torque ∝ H²). Remanence f_r is what makes ' +
-      '“reverse & re-align” readable.');
+    hint(b, 'Fast visual mode: taps and current changes steer filings toward ' +
+      'circular field arcs. It is intentionally cheated for clean video output.');
   }
 
   // ---------- VIEW ----------
@@ -208,7 +200,7 @@ export function buildPanel(root, app) {
       ['8', '1/8 (very fast)'],
     ], String(app.ui.recStride), (v) => { app.ui.recStride = +v; });
     check(b, 'Record shadows', app.ui.recShadows, (v) => { app.ui.recShadows = v; });
-    num(b, 'Physics substeps / frame', app.ui.recSubsteps, 1, (v) => { app.ui.recSubsteps = Math.max(1, Math.round(v)); });
+    num(b, 'Animation steps / frame', app.ui.recSubsteps, 1, (v) => { app.ui.recSubsteps = Math.max(1, Math.round(v)); });
     num(b, 'Seed', app.params.seed, 1, (v) => { app.params.seed = Math.round(v); app.refreshTakeHash(); });
     check(b, 'Include flow indicator', app.ui.recIncludeIndicator, (v) => { app.ui.recIncludeIndicator = v; });
     const row = document.createElement('div');
@@ -231,33 +223,23 @@ export function buildPanel(root, app) {
     d.className = 'diag';
     b.appendChild(d);
     app.el.diag = d;
-    hint(b, 'Γ > 1: field torque beats static friction (spontaneous alignment). ' +
-      'The Γ = 1 radius is where neat arcs give way to ragged ones — the ' +
-      'physically correct look this tool exists for.');
+    hint(b, 'This is now a fast visual animator. Use taps for the reveal and ' +
+      'increase current after the first tap to bloom the arcs outward.');
   }
 
   app.refreshDiagnostics();
 }
 
-// Physics diagnostics from the reference (median) filing.
 export function diagnosticsHTML(app, stats) {
   const p = app.params;
-  const L = p.filingMedianL, aspect = 5;
-  const d = L / aspect;
-  const V = Math.PI / 6 * d * d * L;
-  const m = RHO_IRON * V;
-  const dChi = 15.8; // χ∥−χ⊥ at aspect 5
-  const I = p.currentA;
-  // Γ(r) = ½ μ0 V Δχ H² / (μs m g L/4),  H = I/(2πr)  ⇒  r(Γ=1)
-  const rGamma = (I / (2 * Math.PI)) * Math.sqrt((0.5 * MU0 * V * dChi) / (p.muS * m * G * L / 4));
+  const reach = Math.min(p.sheetW, p.sheetH) * 0.48;
   const fmt = (x, u = '') => `<b>${x}</b>${u}`;
   return [
     `sim time ${fmt(stats.time.toFixed(2), ' s')} · awake ${fmt(stats.awake)} / ${fmt(stats.count)}`,
     `I(t) = ${fmt(stats.current.toFixed(1), ' A')}`,
-    `Γ=1 radius: ${fmt((rGamma * 1000).toFixed(1), ' mm')} <span class="${rGamma > 0.004 ? 'ok' : 'warn'}">` +
-      `(spontaneous alignment inside this)</span>`,
-    `beyond that: taps do the aligning — arcs get ragged with r (correct)`,
-    `worker: ${fmt(stats.stepMs.toFixed(1), ' ms')}/frame · render ${fmt(stats.fps.toFixed(0), ' fps')}`,
+    `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} cheated filings, no pair physics`,
+    `max field reach: ${fmt((reach * 1000).toFixed(0), ' mm')} · current motion ${fmt(p.currentMotion.toFixed(2), '×')}`,
+    `worker: ${fmt(stats.stepMs.toFixed(1), ' ms')}/frame · preview ${fmt(stats.fps.toFixed(0), ' fps')}`,
     stats.rendered && stats.rendered < stats.count
       ? `preview drawing ${fmt(stats.rendered.toLocaleString())} / ${fmt(stats.count.toLocaleString())} filings`
       : null,

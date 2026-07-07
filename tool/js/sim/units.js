@@ -1,5 +1,6 @@
-// Physical constants and default parameters. Everything runs in straight SI
-// (meters, seconds, kg, amps) — float32 has plenty of range for these scales.
+// Physical constants and default parameters. The current app uses a lightweight
+// visual animator for film output; the SI constants stay here for older helper
+// modules and documentation.
 
 export const MU0 = 4 * Math.PI * 1e-7;      // vacuum permeability
 export const G = 9.81;                       // gravity
@@ -47,6 +48,13 @@ export const DEFAULT_PARAMS = {
   coerciveH: 250,         // A/m, |H∥| above this re-sets remanence sign
   chainStrength: 1.0,     // artistic multiplier on dipole–dipole interactions
 
+  // --- visual animator cheats ---
+  maxVisualParticles: 7000,
+  currentAutoAlign: false,// first current-on waits for tap; later increases move
+  currentMotion: 0.8,     // how strongly current changes push the pattern
+  alignSpeed: 3.5,        // position interpolation speed
+  rotateSpeed: 6.5,       // angle interpolation speed
+
   // --- contact & friction ---
   muS: 0.5,
   muK: 0.35,
@@ -64,7 +72,7 @@ export const DEFAULT_PARAMS = {
   neighborCutoff: 3.0e-3, // m, dipole interaction radius (= hash cell size)
 
   // --- sprinkle defaults ---
-  sprinkleCount: 25000,
+  sprinkleCount: 4500,
   sprinkleR: 0.115,       // m, disk radius around hole
   sprinklePattern: 'disk',// 'disk' | 'ring' | 'sheet'
   sprinkleClump: 0.5,     // 0 = uniform Poisson, 1 = heavily clustered
