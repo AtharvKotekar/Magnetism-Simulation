@@ -139,6 +139,9 @@ export function buildPanel(root, app) {
       ['line', 'draft lines (fast)'],
       ['capsule', 'capsules (beauty)'],
     ], app.ui.renderStyle, (v) => { app.ui.renderStyle = v; });
+    slider(b, 'Filing visibility', 0.5, 2, 0.05, app.ui.filingVisibility, '×', (v) => {
+      app.ui.filingVisibility = v;
+    });
     select(b, 'Preview density', [
       ['1', 'full'],
       ['2', '1/2 (faster)'],

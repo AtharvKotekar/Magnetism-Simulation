@@ -211,7 +211,7 @@ void main() {
 }`;
 
 const LINE_VS = `#version 300 es
-layout(location=0) in float aEnd;            // per-vertex, -1 or +1
+layout(location=0) in vec2 aCorner;          // per-vertex, [-1,1]²
 layout(location=1) in vec3 aPos;             // instance: x, y (plane m), z (m)
 layout(location=2) in vec2 aDir;             // instance: cos, sin
 layout(location=3) in vec2 aSize;            // instance: len, wid (m)
@@ -224,7 +224,10 @@ uniform float uKUp;
 uniform float uDetJHole;
 uniform vec2 uJitterPx;
 uniform float uLiftScale;
+uniform float uVisibility;
 
+out vec2 vLocal;
+out vec2 vHalf;
 out float vShade;
 out float vZ;
 
@@ -241,12 +244,24 @@ vec2 project(vec2 p, out float detJ) {
 }
 
 void main() {
-  float detJ;
-  vec2 p = aPos.xy + aDir * (aEnd * aSize.x * 0.5);
-  vec2 px = project(p, detJ);
+  float detJ, dTmp;
+  vec2 center = project(aPos.xy, detJ);
   float scale = sqrt(max(detJ, 1e-6) / uDetJHole);
+
+  vec2 pA = project(aPos.xy - aDir * (aSize.x * 0.5), dTmp);
+  vec2 pB = project(aPos.xy + aDir * (aSize.x * 0.5), dTmp);
+  vec2 axis = pB - pA;
+  float physicalLenPx = length(axis);
+  axis = physicalLenPx > 0.001 ? axis / physicalLenPx : normalize(aDir);
+  vec2 nrm = vec2(-axis.y, axis.x);
+
+  float halfLen = max(physicalLenPx * 0.85, mix(3.0, 7.5, clamp(uVisibility, 0.0, 2.0) * 0.5));
+  float halfWid = mix(1.0, 2.6, clamp(uVisibility, 0.0, 2.0) * 0.5);
+  vec2 px = center + axis * (aCorner.x * halfLen) + nrm * (aCorner.y * halfWid);
   px += uUpDir * (aPos.z * uKUp * scale * uLiftScale) + uJitterPx;
 
+  vLocal = vec2(aCorner.x * halfLen, aCorner.y * halfWid);
+  vHalf = vec2(halfLen, halfWid);
   vShade = aShade;
   vZ = aPos.z;
 
@@ -256,6 +271,8 @@ void main() {
 
 const LINE_FS = `#version 300 es
 precision highp float;
+in vec2 vLocal;
+in vec2 vHalf;
 in float vShade;
 in float vZ;
 
@@ -265,6 +282,7 @@ uniform sampler2D uCardboard;
 uniform vec2 uRes;
 uniform float uClipToCardboard;
 uniform float uLiftScale;
+uniform float uVisibility;
 
 out vec4 fragColor;
 
@@ -277,10 +295,21 @@ void main() {
   float awake = step(0.5, vShade);
   float glint = fract(vShade * 2.0) * 1.002;
   float lift = clamp(vZ * 40.0 * uLiftScale, 0.0, 0.32);
-  vec3 col = uBaseColor * mix(0.72, 1.2, glint);
-  col += uLightColor * (0.06 + 0.18 * glint + lift);
-  col += uLightColor * 0.05 * awake;
-  float alpha = mix(0.82, 1.0, awake);
+
+  float capR = max(vHalf.y, 0.75);
+  float core = max(vHalf.x - capR, 0.0);
+  vec2 q = vec2(abs(vLocal.x) - core, vLocal.y);
+  float d = length(vec2(max(q.x, 0.0), q.y)) - capR;
+  float aa = fwidth(d) + 0.75;
+  float alpha = clamp(0.5 - d / aa, 0.0, 1.0);
+  if (alpha <= 0.01) discard;
+
+  float edge = smoothstep(0.0, 1.0, abs(vLocal.y) / capR);
+  vec3 darkIron = mix(vec3(0.030, 0.027, 0.024), uBaseColor * 1.25, 0.45);
+  vec3 warmGlint = uLightColor * (0.26 + 0.30 * glint + 0.18 * awake + lift);
+  vec3 col = darkIron + warmGlint * mix(0.22, 0.72, glint);
+  col *= 0.82 + 0.20 * (1.0 - edge);
+  alpha *= mix(0.78, 1.0, clamp(uVisibility, 0.0, 2.0) * 0.5);
   fragColor = vec4(col * alpha, alpha);
 }`;
 
@@ -302,7 +331,7 @@ export class FilingRenderer {
     this.lu = uniformMap(gl, this.lineProg,
       ['uH', 'uRes', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightColor',
        'uBaseColor', 'uCardboard', 'uClipToCardboard', 'uJitterPx',
-       'uLiftScale']);
+       'uLiftScale', 'uVisibility']);
   }
 
   buildVAOs() {
@@ -329,15 +358,11 @@ export class FilingRenderer {
     setupInst(gl, 4, 1, stride, 28);   // aShade
     gl.bindVertexArray(null);
 
-    this.lineBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1]), gl.STATIC_DRAW);
-
     this.lineVao = gl.createVertexArray();
     gl.bindVertexArray(this.lineVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuf);
     gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instBuf);
     setupInst(gl, 1, 3, stride, 0);    // aPos: x, y, z
     setupInst(gl, 2, 2, stride, 12);   // aDir: cos, sin
@@ -410,7 +435,6 @@ export class FilingRenderer {
     gl.bindVertexArray(this.lineVao);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.lineWidth(1);
     gl.uniformMatrix3fv(this.lu.uH, false, o.H);
     gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
     gl.uniform2f(this.lu.uUpDir, o.upDir[0], o.upDir[1]);
@@ -421,10 +445,11 @@ export class FilingRenderer {
     gl.uniform1f(this.lu.uClipToCardboard, o.clip ? 1 : 0);
     gl.uniform2f(this.lu.uJitterPx, o.jitterPx[0], o.jitterPx[1]);
     gl.uniform1f(this.lu.uLiftScale, o.liftScale ?? 1);
+    gl.uniform1f(this.lu.uVisibility, o.filingVisibility ?? 1);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, o.cardboardTex);
     gl.uniform1i(this.lu.uCardboard, 1);
-    gl.drawArraysInstanced(gl.LINES, 0, 2, this.count);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.count);
     gl.bindVertexArray(null);
   }
 }
