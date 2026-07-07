@@ -1,0 +1,13 @@
+.DS_Store
+.claude/
+
+# Local recording outputs can get large quickly.
+Assets/take_*.mp4
+Assets/take_*.webm
+Assets/take_*.json
+Assets/take_*_png_seq.zip
+tool/take_*
+
+# Temporary local server/editor files.
+*.log
+*.tmp
