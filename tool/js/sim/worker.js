@@ -4,7 +4,8 @@
 // granular physics solver. We keep the old render-buffer contract so the WebGL
 // renderer and recorder still work, but the worker now drives a simple,
 // deterministic stage animation:
-//   random sprinkle -> tap/current impulse -> tangential circular alignment.
+//   random sprinkle -> tap/current impulse -> tangential circular translation
+//   and alignment.
 
 import { TimelineRunner } from './timeline.js';
 import { DEFAULT_PARAMS } from './units.js';
@@ -136,6 +137,7 @@ class VisualEngine {
   doClear() {
     this.st.clear();
     this.awakeCount = 0;
+    this.hasTapped = false;
   }
 
   doSprinkle(opts = {}) {
@@ -146,6 +148,7 @@ class VisualEngine {
     const radius = opts.radius ?? p.sprinkleR;
     const clump = clamp01(opts.clump ?? p.sprinkleClump);
     st.clear();
+    this.hasTapped = false;
 
     const centers = [];
     const nCenters = Math.max(6, Math.round(12 + 40 * clump));
@@ -169,7 +172,6 @@ class VisualEngine {
       st.spawn(rng, p, placed++, x, y);
     }
     st.n = placed;
-    this.updateTargets(0.05);
     return placed;
   }
 
@@ -195,15 +197,18 @@ class VisualEngine {
   }
 
   doTap(opts = {}) {
-    this.hasTapped = true;
     this.lastTapTime = this.time;
     this.lastTapStrength = opts.strength ?? this.p.tapStrength ?? 8;
     this.tapSerial = (this.tapSerial + 1) >>> 0;
-    const currentAbs = Math.abs(this.currentValue() || this.current.target);
+    const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
     const currentFactor = clamp(currentAbs / 35, 0, 1.4);
     const tapFactor = clamp(this.lastTapStrength / 8, 0.35, 2.2);
-    const impulse = clamp((0.35 + 0.55 * currentFactor) * tapFactor, 0.18, 1.0);
-    this.updateTargets(impulse);
+    const fieldActive = currentAbs > 0.1 || this.p.currentAutoAlign;
+    if (fieldActive) {
+      this.hasTapped = true;
+      const impulse = clamp((0.28 + 0.68 * currentFactor) * tapFactor, 0.18, 1.0);
+      this.updateTargets(impulse);
+    }
     this.wakeFor(1.15 + 0.35 * tapFactor);
 
     const st = this.st;
@@ -222,16 +227,19 @@ class VisualEngine {
   }
 
   currentReach() {
-    const a = Math.abs(this.currentValue() || this.current.target);
+    const a = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
     return clamp(0.038 + 0.0024 * a, 0.035, Math.min(this.p.sheetW, this.p.sheetH) * 0.48);
   }
 
   updateTargets(impulse) {
     const st = this.st, p = this.p;
     const reach = this.currentReach();
-    const currentAbs = Math.abs(this.currentValue() || this.current.target);
+    const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
     const ringSpacing = clamp(0.010 - currentAbs * 0.000025, 0.0065, 0.011);
     const direction = p.currentDir < 0 ? -1 : 1;
+    const friction = clamp01(p.visualFriction ?? 0.45);
+    const slide = clamp01((1 - friction) * (p.slideAmount ?? 1.0));
+    const slideGain = slide * clamp(0.35 + impulse * 0.85, 0.35, 1.2);
     for (let i = 0; i < st.n; i++) {
       const bx = st.baseX[i], by = st.baseY[i];
       const dx = bx - p.holeX, dy = by - p.holeY;
@@ -240,9 +248,13 @@ class VisualEngine {
       const inside = clamp01((reach - r) / Math.max(0.001, reach * 0.75));
       const desired = inside * inside * (3 - 2 * inside);
       const ring = Math.round((r + st.ringNoise[i] * ringSpacing) / ringSpacing) * ringSpacing;
-      const rArc = clamp(r + (ring - r) * 0.55 + st.ringNoise[i] * 0.0015,
+      const radialNudge = (ring - r) * (0.22 + 0.74 * slideGain) +
+        st.ringNoise[i] * reach * 0.032 * desired * slideGain;
+      const orbitNudge = st.thetaDrift[i] * desired * slideGain *
+        clamp(0.20 + currentAbs / 180, 0.20, 0.42);
+      const rArc = clamp(r + radialNudge,
         p.holeWallR + 0.004, Math.min(p.sheetW, p.sheetH) * 0.5);
-      const thetaArc = theta + st.thetaDrift[i] * 0.12 * desired;
+      const thetaArc = theta + orbitNudge;
       st.targetX[i] = p.holeX + Math.cos(thetaArc) * rArc;
       st.targetY[i] = p.holeY + Math.sin(thetaArc) * rArc;
       st.targetAng[i] = theta + direction * Math.PI / 2 +
@@ -296,10 +308,10 @@ class VisualEngine {
       st.align[i] += (st.targetAlign[i] - st.align[i]) * follow;
       const a = clamp01(st.align[i]);
       const wob = tapEnv * (0.0012 + 0.00008 * this.lastTapStrength);
-      st.px[i] = lerp(st.baseX[i], st.targetX[i], a) +
-        Math.sin(tapAge * 38 + st.tapPhase[i]) * wob * st.ringNoise[i];
-      st.py[i] = lerp(st.baseY[i], st.targetY[i], a) +
-        Math.cos(tapAge * 31 + st.tapPhase[i]) * wob * st.thetaDrift[i];
+      const wobX = tapLive ? Math.sin(tapAge * 38 + st.tapPhase[i]) * wob * st.ringNoise[i] : 0;
+      const wobY = tapLive ? Math.cos(tapAge * 31 + st.tapPhase[i]) * wob * st.thetaDrift[i] : 0;
+      st.px[i] = lerp(st.baseX[i], st.targetX[i], a) + wobX;
+      st.py[i] = lerp(st.baseY[i], st.targetY[i], a) + wobY;
       st.pz[i] = tapEnv * st.hop[i];
       st.ang[i] += wrapAngle(st.targetAng[i] - st.ang[i]) * rotateFollow * (0.25 + 0.75 * a);
 

@@ -38,10 +38,10 @@ export const DEFAULT_PARAMS = {
   ambientAngle: 0.6,      // rad, in-plane direction
 
   // --- filings material/geometry ---
-  filingMedianL: 0.5e-3,  // m
+  filingMedianL: 0.65e-3, // m
   filingSigmaLn: 0.25,
-  filingMinL: 0.15e-3,
-  filingMaxL: 1.1e-3,
+  filingMinL: 0.22e-3,
+  filingMaxL: 1.35e-3,
   aspectMin: 3,
   aspectMax: 7,
   remanenceFrac: 0.01,    // f_r · Ms remanent magnetization along axis
@@ -49,9 +49,11 @@ export const DEFAULT_PARAMS = {
   chainStrength: 1.0,     // artistic multiplier on dipole–dipole interactions
 
   // --- visual animator cheats ---
-  maxVisualParticles: 7000,
+  maxVisualParticles: 12000,
   currentAutoAlign: false,// first current-on waits for tap; later increases move
   currentMotion: 0.8,     // how strongly current changes push the pattern
+  visualFriction: 0.35,   // 0 = slides freely, 1 = mostly rotates in place
+  slideAmount: 1.4,       // artistic multiplier for visible translation
   alignSpeed: 3.5,        // position interpolation speed
   rotateSpeed: 6.5,       // angle interpolation speed
 
@@ -72,10 +74,10 @@ export const DEFAULT_PARAMS = {
   neighborCutoff: 3.0e-3, // m, dipole interaction radius (= hash cell size)
 
   // --- sprinkle defaults ---
-  sprinkleCount: 4500,
-  sprinkleR: 0.115,       // m, disk radius around hole
+  sprinkleCount: 6500,
+  sprinkleR: 0.13,        // m, disk radius around hole
   sprinklePattern: 'disk',// 'disk' | 'ring' | 'sheet'
-  sprinkleClump: 0.5,     // 0 = uniform Poisson, 1 = heavily clustered
+  sprinkleClump: 0.32,    // 0 = uniform Poisson, 1 = heavily clustered
 
   seed: 1337,
 };

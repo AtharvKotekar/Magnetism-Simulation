@@ -120,14 +120,19 @@ export function buildPanel(root, app) {
     slider(b, 'Current motion', 0, 1.5, 0.05, app.params.currentMotion, '×', (v) => {
       app.params.currentMotion = v; app.pushParams({ currentMotion: v });
     });
+    slider(b, 'Friction / stickiness', 0, 1, 0.05, app.params.visualFriction, '', (v) => {
+      app.params.visualFriction = v; app.pushParams({ visualFriction: v });
+    });
+    slider(b, 'Slide amount', 0, 2, 0.05, app.params.slideAmount, '×', (v) => {
+      app.params.slideAmount = v; app.pushParams({ slideAmount: v });
+    });
     slider(b, 'Alignment speed', 1, 12, 0.25, app.params.alignSpeed, '×', (v) => {
       app.params.alignSpeed = v; app.pushParams({ alignSpeed: v });
     });
     slider(b, 'Rotation speed', 1, 16, 0.25, app.params.rotateSpeed, '×', (v) => {
       app.params.rotateSpeed = v; app.pushParams({ rotateSpeed: v });
     });
-    hint(b, 'Fast visual mode: taps and current changes steer filings toward ' +
-      'circular field arcs. It is intentionally cheated for clean video output.');
+    hint(b, 'Lower friction lets filings slide into arcs after a tap. Higher friction keeps more of the motion as rotation.');
   }
 
   // ---------- VIEW ----------
@@ -136,8 +141,8 @@ export function buildPanel(root, app) {
     check(b, 'Field-line preview', app.ui.showFieldLines, (v) => { app.ui.showFieldLines = v; });
     check(b, 'Clip filings to cardboard', app.ui.clipToCardboard, (v) => { app.ui.clipToCardboard = v; });
     select(b, 'Filing detail', [
-      ['line', 'draft lines (fast)'],
-      ['capsule', 'capsules (beauty)'],
+      ['line', 'fast detailed strokes'],
+      ['capsule', 'physical capsules'],
     ], app.ui.renderStyle, (v) => { app.ui.renderStyle = v; });
     slider(b, 'Filing visibility', 0.5, 2, 0.05, app.ui.filingVisibility, '×', (v) => {
       app.ui.filingVisibility = v;
@@ -193,8 +198,8 @@ export function buildPanel(root, app) {
     select(b, 'Resolution', [['1', '2752 × 1536 (native)'], ['0.75', '2064 × 1152'], ['0.5', '1376 × 768']],
       String(app.ui.recScale), (v) => { app.ui.recScale = +v; });
     select(b, 'Filing detail', [
-      ['line', 'draft lines (fast)'],
-      ['capsule', 'capsules (beauty)'],
+      ['line', 'fast detailed strokes'],
+      ['capsule', 'physical capsules'],
     ], app.ui.recRenderStyle, (v) => { app.ui.recRenderStyle = v; });
     select(b, 'Filing density', [
       ['1', 'full'],
@@ -241,7 +246,7 @@ export function diagnosticsHTML(app, stats) {
     `sim time ${fmt(stats.time.toFixed(2), ' s')} · awake ${fmt(stats.awake)} / ${fmt(stats.count)}`,
     `I(t) = ${fmt(stats.current.toFixed(1), ' A')}`,
     `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} cheated filings, no pair physics`,
-    `max field reach: ${fmt((reach * 1000).toFixed(0), ' mm')} · current motion ${fmt(p.currentMotion.toFixed(2), '×')}`,
+    `max field reach: ${fmt((reach * 1000).toFixed(0), ' mm')} · friction ${fmt(p.visualFriction.toFixed(2))}`,
     `worker: ${fmt(stats.stepMs.toFixed(1), ' ms')}/frame · preview ${fmt(stats.fps.toFixed(0), ' fps')}`,
     stats.rendered && stats.rendered < stats.count
       ? `preview drawing ${fmt(stats.rendered.toLocaleString())} / ${fmt(stats.count.toLocaleString())} filings`

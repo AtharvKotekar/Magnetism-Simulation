@@ -255,8 +255,9 @@ void main() {
   axis = physicalLenPx > 0.001 ? axis / physicalLenPx : normalize(aDir);
   vec2 nrm = vec2(-axis.y, axis.x);
 
-  float halfLen = max(physicalLenPx * 0.85, mix(3.0, 7.5, clamp(uVisibility, 0.0, 2.0) * 0.5));
-  float halfWid = mix(1.0, 2.6, clamp(uVisibility, 0.0, 2.0) * 0.5);
+  float vis = clamp(uVisibility, 0.0, 2.0) * 0.5;
+  float halfLen = max(physicalLenPx * mix(1.25, 2.2, vis), mix(4.8, 10.5, vis));
+  float halfWid = mix(1.05, 2.35, vis);
   vec2 px = center + axis * (aCorner.x * halfLen) + nrm * (aCorner.y * halfWid);
   px += uUpDir * (aPos.z * uKUp * scale * uLiftScale) + uJitterPx;
 
@@ -296,7 +297,7 @@ void main() {
   float glint = fract(vShade * 2.0) * 1.002;
   float lift = clamp(vZ * 40.0 * uLiftScale, 0.0, 0.32);
 
-  float capR = max(vHalf.y, 0.75);
+  float capR = max(vHalf.y, 1.0);
   float core = max(vHalf.x - capR, 0.0);
   vec2 q = vec2(abs(vLocal.x) - core, vLocal.y);
   float d = length(vec2(max(q.x, 0.0), q.y)) - capR;
@@ -305,11 +306,12 @@ void main() {
   if (alpha <= 0.01) discard;
 
   float edge = smoothstep(0.0, 1.0, abs(vLocal.y) / capR);
-  vec3 darkIron = mix(vec3(0.030, 0.027, 0.024), uBaseColor * 1.25, 0.45);
-  vec3 warmGlint = uLightColor * (0.26 + 0.30 * glint + 0.18 * awake + lift);
-  vec3 col = darkIron + warmGlint * mix(0.22, 0.72, glint);
-  col *= 0.82 + 0.20 * (1.0 - edge);
-  alpha *= mix(0.78, 1.0, clamp(uVisibility, 0.0, 2.0) * 0.5);
+  float along = 1.0 - smoothstep(vHalf.x * 0.25, vHalf.x, abs(vLocal.x));
+  vec3 darkIron = mix(vec3(0.018, 0.015, 0.013), uBaseColor * 0.50, 0.25);
+  vec3 warmGlint = uLightColor * (0.10 + 0.22 * glint + 0.14 * awake + lift);
+  vec3 col = darkIron + warmGlint * mix(0.10, 0.42, glint);
+  col *= 0.70 + 0.22 * (1.0 - edge) + 0.10 * along;
+  alpha *= mix(0.88, 1.0, clamp(uVisibility, 0.0, 2.0) * 0.5);
   fragColor = vec4(col * alpha, alpha);
 }`;
 
