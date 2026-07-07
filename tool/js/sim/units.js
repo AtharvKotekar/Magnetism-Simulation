@@ -63,6 +63,8 @@ export const DEFAULT_PARAMS = {
   inwardPull: 0.0065,     // m, slight gradient drift toward stronger field
   alignSpeed: 3.8,        // position interpolation speed
   rotateSpeed: 6.8,       // angle interpolation speed
+  airborneAlignSpeed: 11.0,
+  airborneRotateSpeed: 15.0,
 
   // --- contact & friction ---
   muS: 0.5,

@@ -86,6 +86,7 @@ class VisualEngine {
     this.time = 0;
     this.awakeCount = 0;
     this.hasTapped = false;
+    this.tapWasLive = false;
     this.nextAutoTap = Infinity;
     this.lastTapTime = -Infinity;
     this.lastTapStrength = 0;
@@ -107,6 +108,7 @@ class VisualEngine {
     this.time = 0;
     this.awakeCount = 0;
     this.hasTapped = false;
+    this.tapWasLive = false;
     this.nextAutoTap = Infinity;
     this.lastTapTime = -Infinity;
     this.lastTapStrength = 0;
@@ -138,6 +140,7 @@ class VisualEngine {
     this.st.clear();
     this.awakeCount = 0;
     this.hasTapped = false;
+    this.tapWasLive = false;
   }
 
   doSprinkle(opts = {}) {
@@ -149,6 +152,7 @@ class VisualEngine {
     const clump = clamp01(opts.clump ?? p.sprinkleClump);
     st.clear();
     this.hasTapped = false;
+    this.tapWasLive = false;
 
     const centers = [];
     const nCenters = Math.max(5, Math.round(6 + 24 * clump));
@@ -301,27 +305,50 @@ class VisualEngine {
     for (let i = 0; i < st.n; i++) st.awakeUntil[i] = Math.max(st.awakeUntil[i], until);
   }
 
+  settleAfterTap() {
+    const st = this.st;
+    for (let i = 0; i < st.n; i++) {
+      if (st.tapMask[i] <= 0.02 && st.align[i] <= 0.01) continue;
+      st.baseX[i] = st.px[i];
+      st.baseY[i] = st.py[i];
+      st.targetX[i] = st.px[i];
+      st.targetY[i] = st.py[i];
+      st.pz[i] = 0;
+      st.targetAng[i] = st.ang[i];
+      st.align[i] = 0;
+      st.targetAlign[i] = 0;
+      st.hop[i] = 0;
+      st.tapMask[i] = 0;
+      st.awakeUntil[i] = Math.min(st.awakeUntil[i], this.time + 0.04);
+    }
+  }
+
   advance(dt) {
     const p = this.p, st = this.st;
     this.time += dt;
     this.current.value = this.currentValue();
+    const tapAge = this.time - this.lastTapTime;
+    const tapDur = 0.75;
+    const tapLive = tapAge >= 0 && tapAge < tapDur;
+    const landedNow = this.tapWasLive && !tapLive;
+    if (landedNow) this.settleAfterTap();
 
     if (this.time >= this.nextAutoTap) {
       this.doTap({});
       this.nextAutoTap = this.time + expInterval(this.rng, Math.max(1e-6, p.autoTapRate || 0));
     }
 
-    if ((p.currentAutoAlign || this.hasTapped) && Math.abs(this.current.value) > 0.1) {
-      // Cheap outward bloom while current ramps or AC shimmers.
-      const shimmer = this.current.mode === 'ac' ? 0.04 : 0.012;
+    if ((p.currentAutoAlign || this.hasTapped) && this.current.mode === 'ac' &&
+        tapLive && Math.abs(this.current.value) > 0.1) {
+      // AC can shimmer while filings are lifted; DC should settle after landing.
+      const shimmer = 0.04;
       this.updateTargets(shimmer * (p.currentMotion ?? 0.7));
     }
 
-    const follow = 1 - Math.exp(-dt * (p.alignSpeed ?? 4.5));
-    const rotateFollow = 1 - Math.exp(-dt * (p.rotateSpeed ?? 7.5));
-    const tapAge = this.time - this.lastTapTime;
-    const tapDur = 0.75;
-    const tapLive = tapAge >= 0 && tapAge < tapDur;
+    const followSpeed = tapLive ? (p.airborneAlignSpeed ?? 10) : (p.alignSpeed ?? 4.5);
+    const rotateSpeed = tapLive ? (p.airborneRotateSpeed ?? 14) : (p.rotateSpeed ?? 7.5);
+    const follow = 1 - Math.exp(-dt * followSpeed);
+    const rotateFollow = 1 - Math.exp(-dt * rotateSpeed);
     const tapEnv = tapLive ? Math.sin(Math.PI * tapAge / tapDur) * (1 - tapAge / tapDur) : 0;
     let awake = 0;
 
@@ -344,6 +371,7 @@ class VisualEngine {
       if (moving) awake++;
     }
     this.awakeCount = awake;
+    this.tapWasLive = tapLive;
   }
 }
 
