@@ -39,6 +39,10 @@ export class SceneLayers {
     // Optional alternate keyframe shown while the current runs the other
     // way (e.g. the coil scene with the cell physically flipped).
     this.reverseBase = opts.reverseBase || null;
+    // Optional multi-turn conductor bundles: { 2: {src, rect}, 3: {src, rect} }.
+    // Drawn instead of the base occluder; each bundle covers the arch baked
+    // into the keyframe with its outermost tube.
+    this.turnOverlays = opts.turnOverlays || null;
     this.occluderRect = opts.occluderRect || OCCLUDER_RECT;
     this.prog = compileProgram(gl, VS, FS);
     this.vao = unitQuadVAO(gl);
@@ -69,8 +73,26 @@ export class SceneLayers {
         this.sceneReverse = null;   // optional — fall back to the base keyframe
       }
     }
+    this.turnTex = {};
+    if (this.turnOverlays) {
+      for (const k of Object.keys(this.turnOverlays)) {
+        try {
+          this.turnTex[k] = await loadTexture(gl, this.turnOverlays[k].src);
+        } catch {
+          // missing bundle — that turn count falls back to the single coil
+        }
+      }
+    }
     this.W = this.scene.width;
     this.H = this.scene.height;
+  }
+
+  occluderFor(turns = 1) {
+    const cfg = this.turnOverlays?.[turns];
+    if (turns > 1 && cfg && this.turnTex[turns]) {
+      return { tex: this.turnTex[turns].tex, rect: cfg.rect };
+    }
+    return { tex: this.occluder.tex, rect: this.occluderRect };
   }
 
   drawQuad(tex, rect, opacity = 1) {
@@ -96,21 +118,23 @@ export class SceneLayers {
     gl.enable(gl.BLEND);
   }
 
-  drawOccluder() {
+  drawOccluder(turns = 1) {
     const gl = this.gl;
+    const { tex, rect } = this.occluderFor(turns);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    this.drawQuad(this.occluder.tex, this.occluderRect);
+    this.drawQuad(tex, rect);
   }
 
   // For the filings-only alpha pass: punch the occluder's silhouette OUT of
   // whatever is already drawn (dst *= 1 − occluder.α), so filings behind the
   // wire stay hidden when the film team composites the alpha sequence.
-  drawOccluderEraser() {
+  drawOccluderEraser(turns = 1) {
     const gl = this.gl;
+    const { tex, rect } = this.occluderFor(turns);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
-    this.drawQuad(this.occluder.tex, this.occluderRect);
+    this.drawQuad(tex, rect);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 }

@@ -55,6 +55,10 @@ export function buildPanel(root, app) {
     };
     dirRow.appendChild(dirBtn);
     b.appendChild(dirRow);
+    if (app.variant?.scene?.turnOverlays) {
+      select(b, 'Coil turns', [['1', '1 coil'], ['2', '2 coils'], ['3', '3 coils']],
+        String(app.ui.coilTurns ?? 1), (v) => { app.setCoilTurns(+v); });
+    }
     subhead(b, 'CONDUCTOR OVERLAY');
     check(b, 'Overlay visible', app.ui.showIndicator, (v) => { app.ui.showIndicator = v; });
     check(b, 'Pulses', app.ui.showCurrentPulses, (v) => { app.ui.showCurrentPulses = v; });

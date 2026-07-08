@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v5';
-import { SceneLayers } from './render/scene.js?v=coil-v5';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v5';
-import { Overlays } from './render/overlays.js?v=coil-v5';
+import { createGL } from './render/gl.js?v=coil-v6';
+import { SceneLayers } from './render/scene.js?v=coil-v6';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v6';
+import { Overlays } from './render/overlays.js?v=coil-v6';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v5';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v5';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v6';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v6';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v5';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v6';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v5';
+import { buildVariantConfig } from './variant.js?v=coil-v6';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v5', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v6', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -210,13 +210,18 @@ app.rebuildFieldOverlay = rebuildFieldOverlay;
 
 function rebuildCurrentOverlay() {
   if (!app.overlays) return;
+  const overlayCfg = app.variant.currentOverlay || {};
+  const turns = app.ui.coilTurns ?? 1;
   const opts = {
     trackWidth: app.ui.currentTrackWidth,
     arrowSpacing: app.ui.currentArrowSpacing,
     arrowSize: app.ui.currentArrowSize,
     pathOffset: [app.ui.currentPathOffsetX ?? 0, app.ui.currentPathOffsetY ?? 0],
-    ...(app.variant.currentOverlay || {}),
+    ...overlayCfg,
   };
+  if (turns > 1 && overlayCfg.pathsByTurns?.[turns]) {
+    opts.paths = overlayCfg.pathsByTurns[turns];
+  }
   if (typeof app.overlays.buildCurrentOverlay === 'function') {
     app.overlays.buildCurrentOverlay(opts);
   } else {
@@ -225,6 +230,14 @@ function rebuildCurrentOverlay() {
   }
 }
 app.rebuildCurrentOverlay = rebuildCurrentOverlay;
+
+// Coil turn count (1/2/3): swaps the conductor bundle overlay and gives
+// every conductor its own current path. Scene dressing, like canvasRes —
+// deliberately not part of presets or the take hash.
+app.setCoilTurns = (n) => {
+  app.ui.coilTurns = Math.max(1, Math.min(3, n | 0));
+  rebuildCurrentOverlay();
+};
 
 function drawOpts(m, { alphaOnly = false, renderStyle = app.ui.renderStyle, shadows = app.ui.previewShadows } = {}) {
   const jitterPx = alphaOnly ? [0, 0] : tapJitterPx(m);
@@ -292,7 +305,7 @@ function drawFrame(m, {
     app.scene.setJitter([0, 0]);
     if (o.shadows) app.filings.drawShadows(o);
     drawFilings();
-    app.scene.drawOccluderEraser();
+    app.scene.drawOccluderEraser(app.ui.coilTurns ?? 1);
     return;
   }
 
@@ -375,7 +388,7 @@ function drawFrame(m, {
   }
 
   app.scene.setJitter([0, 0]);
-  app.scene.drawOccluder();
+  app.scene.drawOccluder(app.ui.coilTurns ?? 1);
 
   const showInd = indicator !== null ? indicator : app.ui.showIndicator;
   if (showInd) {

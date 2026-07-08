@@ -347,12 +347,19 @@ export class Overlays {
     this.fieldPxToM = 1e-4;
   }
 
+  // opts.paths (array of point lists) draws several conductors in series —
+  // the multi-turn coil — each with its own dash arc, arrows, and comet
+  // heads, all flowing the same way. opts.path stays the single-conductor
+  // form; with neither, the straight variant's baked wire path is used.
   buildCurrentOverlay(opts = {}) {
-    this.currentLine = opts.path ? buildPolylineFromPoints(opts.path) : buildWirePolyline();
+    const paths = opts.paths?.length ? opts.paths : (opts.path ? [opts.path] : null);
+    this.currentLines = paths ? paths.map((p) => buildPolylineFromPoints(p)) : [buildWirePolyline()];
     const [offX, offY] = opts.pathOffset ?? [0, 0];
     if (offX || offY) {
-      this.currentLine = this.currentLine.map((p) => ({ ...p, x: p.x + offX, y: p.y + offY }));
+      this.currentLines = this.currentLines.map((line) =>
+        line.map((p) => ({ ...p, x: p.x + offX, y: p.y + offY })));
     }
+    this.currentLine = this.currentLines[0];
     this.buildDashGeometry(opts.trackWidth ?? 12.0);
     this.buildCurrentArrowGeometry({
       spacing: opts.arrowSpacing ?? 340,
@@ -362,24 +369,26 @@ export class Overlays {
 
   buildDashGeometry(widthPx = 12.0) {
     const gl = this.gl;
-    const line = this.currentLine || buildWirePolyline();
+    const lines = this.currentLines || [this.currentLine || buildWirePolyline()];
     const width = Math.max(2.0, widthPx);
     const verts = [];  // x, y, arc, side, under
-    for (let i = 0; i < line.length - 1; i++) {
-      const a = line[i], b = line[i + 1];
-      let tx = b.x - a.x, ty = b.y - a.y;
-      const len = Math.hypot(tx, ty) || 1;
-      tx /= len; ty /= len;
-      const nx = -ty * width, ny = tx * width;
-      // two triangles per segment
-      verts.push(
-        a.x + nx, a.y + ny, a.s, 1, a.under,
-        a.x - nx, a.y - ny, a.s, -1, a.under,
-        b.x + nx, b.y + ny, b.s, 1, b.under,
-        a.x - nx, a.y - ny, a.s, -1, a.under,
-        b.x - nx, b.y - ny, b.s, -1, b.under,
-        b.x + nx, b.y + ny, b.s, 1, b.under,
-      );
+    for (const line of lines) {
+      for (let i = 0; i < line.length - 1; i++) {
+        const a = line[i], b = line[i + 1];
+        let tx = b.x - a.x, ty = b.y - a.y;
+        const len = Math.hypot(tx, ty) || 1;
+        tx /= len; ty /= len;
+        const nx = -ty * width, ny = tx * width;
+        // two triangles per segment
+        verts.push(
+          a.x + nx, a.y + ny, a.s, 1, a.under,
+          a.x - nx, a.y - ny, a.s, -1, a.under,
+          b.x + nx, b.y + ny, b.s, 1, b.under,
+          a.x - nx, a.y - ny, a.s, -1, a.under,
+          b.x - nx, b.y - ny, b.s, -1, b.under,
+          b.x + nx, b.y + ny, b.s, 1, b.under,
+        );
+      }
     }
     this.dashCount = verts.length / 5;
     this.dashVAO = gl.createVertexArray();
@@ -397,8 +406,7 @@ export class Overlays {
 
   buildCurrentArrowGeometry(opts = {}) {
     const gl = this.gl;
-    const line = this.currentLine || buildWirePolyline();
-    const total = line[line.length - 1].s;
+    const lines = this.currentLines || [this.currentLine || buildWirePolyline()];
     const size = Math.max(0.25, opts.size ?? 1);
     const spacing = Math.max(80, opts.spacing ?? 340);
     const local = [
@@ -407,11 +415,14 @@ export class Overlays {
       [-18 * size, 9 * size],
     ];
     const verts = []; // center x/y, tangent x/y, local x/y, under
-    for (let s = 270; s < total - 180; s += spacing) {
-      const p = samplePolyline(line, s);
-      if (!p) continue;
-      for (const l of local) {
-        verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+    for (const line of lines) {
+      const total = line[line.length - 1].s;
+      for (let s = 270; s < total - 180; s += spacing) {
+        const p = samplePolyline(line, s);
+        if (!p) continue;
+        for (const l of local) {
+          verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+        }
       }
     }
     this.currentArrowCount = verts.length / 7;
@@ -479,9 +490,7 @@ export class Overlays {
   }
 
   drawCurrentCometHeads(o) {
-    const line = this.currentLine || buildWirePolyline();
-    const total = line[line.length - 1]?.s ?? 0;
-    if (!total) return;
+    const lines = this.currentLines || [this.currentLine || buildWirePolyline()];
     const gl = this.gl;
     const spacing = Math.max(60, o.spacing ?? 140);
     const speedPx = 420.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1);
@@ -493,11 +502,14 @@ export class Overlays {
     ];
     const verts = [];
     const start = positiveMod((o.time ?? 0) * speedPx, spacing);
-    for (let s = start; s < total; s += spacing) {
-      const p = samplePolyline(line, s);
-      if (!p) continue;
-      for (const l of local) {
-        verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+    for (const line of lines) {
+      const total = line[line.length - 1]?.s ?? 0;
+      for (let s = start; s < total; s += spacing) {
+        const p = samplePolyline(line, s);
+        if (!p) continue;
+        for (const l of local) {
+          verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+        }
       }
     }
     if (!verts.length) return;
