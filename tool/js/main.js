@@ -1,19 +1,22 @@
 // Magnetism Stage — orchestrator. Owns the worker, the render stack, the UI
 // state, and the interactive/record loops.
 
-import { createGL } from './render/gl.js';
-import { SceneLayers } from './render/scene.js';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js';
-import { Overlays } from './render/overlays.js?v=field-motion';
+// The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
+// deploy changes these modules — bump them together with the tags in
+// tool/index.html and coil/index.html.
+import { createGL } from './render/gl.js?v=coil-v2';
+import { SceneLayers } from './render/scene.js?v=coil-v2';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v2';
+import { Overlays } from './render/overlays.js?v=coil-v2';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=path-offset';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v2';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v2';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
-import { DEFAULT_UI } from './ui/defaults.js';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v2';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js';
+import { buildVariantConfig } from './variant.js?v=coil-v2';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -52,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v2', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
