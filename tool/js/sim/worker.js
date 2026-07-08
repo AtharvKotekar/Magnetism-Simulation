@@ -361,6 +361,13 @@ class VisualEngine {
     const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
     const margin = p.sprinkleEdgeMargin ?? 0.004;
     const snapCap = spacing * 3.5;
+    const abx = bx - ax, aby = by - ay;
+    const sep = Math.max(1e-6, Math.hypot(abx, aby));
+    const ux = abx / sep, uy = aby / sep;
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const half = sep * 0.5;
+    const pullR = Math.max(0.005, p.pullRadius ?? 0.045);
+    const axisPull = Math.max(0, p.axisPull ?? 0);
 
     for (let i = 0; i < st.n; i++) {
       if (st.stray[i]) continue;
@@ -401,17 +408,26 @@ class VisualEngine {
         (p.chainCapture ?? 0.85) * chain * (0.9 + 0.4 * slideGain);
       const minD = Math.min(da, db);
       const inwardLimit = Math.max(0, minD - rim);
-      // Gradient attraction is only felt right next to a leg. A constant pull
-      // everywhere acts as a slow vacuum: its sign flips at the bisector, so
-      // over many taps the center strip drains from both sides (a visible
-      // bare gap between the conductors). Fade it out beyond ~4 cm.
-      const pullZone = clamp01(1 - minD / 0.045);
+      // Gradient attraction toward a leg fades beyond pullRadius. A constant
+      // pull everywhere acts as a slow vacuum: its sign flips at the
+      // bisector, so over many taps the center strip drains from both sides
+      // (a visible bare gap between the conductors).
+      const pullZone = clamp01(1 - minD / pullR);
       const inward = Math.min(inwardLimit,
         (p.inwardPull ?? 0.003) * currentScale * chain * impulse) *
         pullZone * pullZone * (nearB ? 1 : -1);
+      // Middle-line pull: the dense flux bundle through the loop gathers
+      // filings toward the bisector, band by band. Zoned to the loop
+      // interior so it never fights the near-leg attraction.
+      const along = (x - mx) * ux + (y - my) * uy;
+      const crossD = -(x - mx) * uy + (y - my) * ux;
+      const axisZone = clamp01(1 - Math.abs(along) / Math.max(1e-4, half * 0.92)) *
+        clamp01(1.15 - Math.abs(crossD) / Math.max(1e-4, half));
+      const axisStep = Math.min(Math.abs(along),
+        axisPull * currentScale * chain * impulse * axisZone) * (along > 0 ? -1 : 1);
       const drift = st.thetaDrift[i] * spacing * 0.9 * chain * slideGain;
-      let tx = x + gxn * (toBand + inward) + fx * drift;
-      let ty = y + gyn * (toBand + inward) + fy * drift;
+      let tx = x + gxn * (toBand + inward) + ux * axisStep + fx * drift;
+      let ty = y + gyn * (toBand + inward) + uy * axisStep + fy * drift;
       const pushed = pushOutOfNoGo(tx, ty, p, this.rng);
       if (pushed) { tx = pushed[0]; ty = pushed[1]; }
       st.targetX[i] = clamp(tx, margin, p.sheetW - margin);

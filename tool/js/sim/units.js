@@ -63,6 +63,8 @@ export const DEFAULT_PARAMS = {
   chainCapture: 0.96,     // how strongly filings snap toward chain bands
   chainStrength: 0.30,    // magnetized-neighbor chaining multiplier
   inwardPull: 0.00325,    // m, slight gradient drift toward stronger field
+  pullRadius: 0.045,      // m, how far from a leg the inward pull is felt (coil)
+  axisPull: 0.0012,       // m, per-tap drift toward the center flux bundle (coil)
   rimClearance: 0.0004,   // m, tiny no-settle buffer outside the hole rim
   alignSpeed: 4.0,        // position interpolation speed
   rotateSpeed: 5.25,      // angle interpolation speed

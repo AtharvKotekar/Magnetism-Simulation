@@ -208,6 +208,12 @@ export function buildPanel(root, app) {
     slider(b, 'Inward pull', 0, 8, 0.25, app.params.inwardPull * 1000, ' mm', (v) => {
       app.params.inwardPull = v * 1e-3; app.pushParams({ inwardPull: app.params.inwardPull });
     });
+    slider(b, 'Pull radius', 10, 150, 5, (app.params.pullRadius ?? 0.045) * 1000, ' mm', (v) => {
+      app.params.pullRadius = v * 1e-3; app.pushParams({ pullRadius: app.params.pullRadius });
+    });
+    slider(b, 'Middle-line pull', 0, 6, 0.25, (app.params.axisPull ?? 0) * 1000, ' mm', (v) => {
+      app.params.axisPull = v * 1e-3; app.pushParams({ axisPull: app.params.axisPull });
+    });
     slider(b, 'Friction / stickiness', 0, 1, 0.05, app.params.visualFriction, '', (v) => {
       app.params.visualFriction = v; app.pushParams({ visualFriction: v });
     });

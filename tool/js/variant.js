@@ -96,6 +96,8 @@ export const COIL_PRESETS = [
       chainStrength: 0.55,
       chainCapture: 0.90,
       inwardPull: 0.0028,
+      pullRadius: 0.045,
+      axisPull: 0.0012,
       visualFriction: 0.32,
       slideAmount: 0.82,
       alignSpeed: 4.2,
@@ -194,6 +196,8 @@ const COIL_VARIANT = {
     chainStrength: 0.55,
     chainCapture: 0.90,
     inwardPull: 0.0028,
+    pullRadius: 0.045,
+    axisPull: 0.0012,
   },
   presets: COIL_PRESETS,
 };
