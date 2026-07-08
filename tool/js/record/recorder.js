@@ -1,226 +1,173 @@
-// Deterministic, frame-stepped recorder. Never consults the wall clock:
-// the take restarts from t=0 with the configured seed, the worker advances
-// EXACTLY frameDt per frame in fixed substeps, and every frame is rendered
-// and encoded before the next one is simulated. Slower than realtime at full
-// quality — that's the point.
-
-import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from '../../vendor/mp4-muxer.mjs';
-import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from '../../vendor/webm-muxer.mjs';
-import { ZipStore } from './zipstore.js';
+// Live canvas recorder. This captures the simulation exactly as the user drives
+// it: press record, interact with the board/current/taps, press stop, download.
 
 export class Recorder {
   constructor(app) {
     this.app = app;
-    this.cancelled = false;
+    this.media = null;
+    this.chunks = [];
+    this.stream = null;
+    this.copyRaf = 0;
+    this.timer = 0;
+    this.startedAt = 0;
+    this.captureCanvas = null;
+    this.captureCtx = null;
+    this.failed = false;
   }
 
-  // cfg: {format, fps, duration, scale, substeps, renderStyle,
-  //       renderStride, shadows, includeIndicator}
-  async record(cfg, onProgress) {
-    const app = this.app;
-    this.cancelled = false;
-    const totalFrames = Math.max(1, Math.round(cfg.duration * cfg.fps));
-    const frameDt = 1 / cfg.fps;
-    const W = Math.round(app.canvas.width * cfg.scale / 2) * 2;
-    const H = Math.round(app.canvas.height * cfg.scale / 2) * 2;
+  get active() {
+    return this.media && this.media.state !== 'inactive';
+  }
 
-    // output sinks
-    let video = null;
-    let pngSink = null;
-    const isVideo = cfg.format === 'mp4' || cfg.format === 'webm';
-    if (isVideo) video = await this.setupVideo(cfg, W, H);
-    else pngSink = await this.setupPngSink(cfg);
-
-    // scaled capture surface (drawImage from the gl canvas)
-    let capCanvas = null, capCtx = null;
-    if (cfg.scale !== 1 || isVideo) {
-      capCanvas = new OffscreenCanvas(W, H);
-      capCtx = capCanvas.getContext('2d');
+  start(cfg = {}, onStatus = () => {}, onDone = () => {}, onError = () => {}) {
+    if (this.active) return false;
+    if (!this.app.canvas.captureStream || typeof MediaRecorder === 'undefined') {
+      throw new Error('Live recording needs a browser with canvas MediaRecorder support.');
     }
 
-    // deterministic restart
-    await app.resetTake();
+    const fps = Math.max(1, cfg.fps || 30);
+    const source = this.app.canvas;
+    const scale = Math.max(0.25, Math.min(1, cfg.scale || 1));
+    const W = even(cfg.size?.width || source.width * scale);
+    const H = even(cfg.size?.height || source.height * scale);
+    const target = this.captureTarget(source, W, H);
+    const mimeChoices = chooseMimes(cfg.format);
 
-    const meta = {
-      takeHash: app.takeHash,
-      seed: app.params.seed,
-      fps: cfg.fps,
-      duration: cfg.duration,
-      frames: totalFrames,
-      resolution: [W, H],
-      substepsPerFrame: cfg.substeps,
-      renderStyle: cfg.renderStyle,
-      renderStride: cfg.renderStride,
-      shadows: cfg.shadows,
-      params: { ...app.params },
-      calibration: app.cal,
-      timeline: app.timeline,
-      recordedAt: new Date().toISOString(),
+    this.chunks = [];
+    this.failed = false;
+    this.stream = target.captureStream(fps);
+    const baseOptions = { videoBitsPerSecond: cfg.bitrate || 28e6 };
+    let chosenMime = '';
+    let lastError = null;
+    for (const mime of mimeChoices) {
+      try {
+        const options = { ...baseOptions, ...(mime ? { mimeType: mime } : {}) };
+        this.media = new MediaRecorder(this.stream, options);
+        chosenMime = mime;
+        break;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (!this.media) {
+      this.stopCopyLoop();
+      this.stopTracks();
+      throw lastError || new Error('No supported live recording format.');
+    }
+    this.startedAt = performance.now();
+
+    this.media.ondataavailable = (e) => {
+      if (e.data && e.data.size) this.chunks.push(e.data);
+    };
+    this.media.onerror = (e) => {
+      const err = e.error || new Error('Recording failed.');
+      this.failed = true;
+      this.cleanup();
+      this.media = null;
+      this.chunks = [];
+      onError(err);
+    };
+    this.media.onstop = () => {
+      if (this.failed) return;
+      const elapsed = (performance.now() - this.startedAt) / 1000;
+      clearInterval(this.timer);
+      const mime = this.media?.mimeType || chosenMime || 'video/webm';
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(this.chunks, { type: mime });
+      if (blob.size > 0) download(blob, `manual_${W}x${H}_${fps}fps_${this.app.takeHash}_${stamp()}.${ext}`);
+      this.cleanup();
+      this.media = null;
+      this.chunks = [];
+      onStatus(`saved ${elapsed.toFixed(1)} s`);
+      onDone({ elapsed, bytes: blob.size, ext });
     };
 
     try {
-      for (let f = 0; f < totalFrames; f++) {
-        if (this.cancelled) break;
-        // simulate exactly one frame of time
-        const snap = await app.stepFrame(frameDt, cfg.substeps, cfg.renderStride);
-        // beauty pass
-        app.drawFrame(snap, {
-          recording: true,
-          indicator: cfg.includeIndicator,
-          renderStyle: cfg.renderStyle,
-          shadows: cfg.shadows,
-        });
-
-        if (isVideo) {
-          capCtx.drawImage(app.canvas, 0, 0, W, H);
-          const frame = new VideoFrame(capCanvas, {
-            timestamp: Math.round(f * 1e6 / cfg.fps),
-            duration: Math.round(1e6 / cfg.fps),
-          });
-          video.encoder.encode(frame, { keyFrame: f % (cfg.fps * 2) === 0 });
-          frame.close();
-          while (video.encoder.encodeQueueSize > 4) await sleep(4);
-        } else {
-          const beauty = await this.capture(app.canvas, capCanvas, capCtx, cfg.scale);
-          await pngSink.write(`frame_${pad(f)}.png`, beauty);
-          if (cfg.format === 'png-alpha') {
-            app.drawFrame(snap, {
-              recording: true,
-              indicator: false,
-              alphaOnly: true,
-              renderStyle: cfg.renderStyle,
-              shadows: cfg.shadows,
-            });
-            const alpha = await this.capture(app.canvas, capCanvas, capCtx, cfg.scale);
-            await pngSink.write(`filings_alpha_${pad(f)}.png`, alpha);
-          }
-        }
-        onProgress(f + 1, totalFrames);
-        await sleep(0); // yield to keep the tab responsive
-      }
-
-      if (this.cancelled) {
-        if (video) { try { await video.encoder.flush(); } catch (_) {} }
-        return { cancelled: true };
-      }
-
-      const metaBytes = new TextEncoder().encode(JSON.stringify(meta, null, 2));
-      if (isVideo) {
-        await video.encoder.flush();
-        video.muxer.finalize();
-        const ext = cfg.format;
-        const mime = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-        download(new Blob([video.muxer.target.buffer], { type: mime }),
-          `take_${app.takeHash}.${ext}`);
-        download(new Blob([metaBytes], { type: 'application/json' }),
-          `take_${app.takeHash}.json`);
-      } else {
-        await pngSink.write(`take_${app.takeHash}.json`, new Blob([metaBytes]));
-        await pngSink.close();
-      }
-      return { frames: totalFrames };
-    } finally {
-      app.recording = false;
+      this.media.start(1000);
+    } catch (err) {
+      this.stopCopyLoop();
+      this.stopTracks();
+      this.media = null;
+      throw err;
     }
+    this.timer = setInterval(() => {
+      const elapsed = (performance.now() - this.startedAt) / 1000;
+      onStatus(`recording ${elapsed.toFixed(1)} s`);
+    }, 200);
+    onStatus('recording 0.0 s');
+    return true;
   }
 
-  cancel() { this.cancelled = true; }
-
-  async setupVideo(cfg, W, H) {
-    if (typeof VideoEncoder === 'undefined') {
-      throw new Error('WebCodecs not available — use Chrome/Edge, or record a PNG sequence.');
-    }
-    const tryConfigs = cfg.format === 'mp4'
-      ? [
-          { codec: cfg.fps >= 60 ? 'avc1.640034' : 'avc1.640033', kind: 'avc' },
-          { codec: 'avc1.640033', kind: 'avc' },
-        ]
-      : [{ codec: 'vp09.00.50.08', kind: 'V_VP9' }];
-    let chosen = null;
-    for (const c of tryConfigs) {
-      const support = await VideoEncoder.isConfigSupported({
-        codec: c.codec, width: W, height: H, bitrate: 40e6, framerate: cfg.fps,
-      });
-      if (support.supported) { chosen = c; break; }
-    }
-    if (!chosen) throw new Error(`No supported ${cfg.format.toUpperCase()} encoder at ${W}×${H}@${cfg.fps} — try WebM or a lower resolution.`);
-
-    let muxer;
-    if (cfg.format === 'mp4') {
-      muxer = new Mp4Muxer({
-        target: new Mp4Target(),
-        video: { codec: 'avc', width: W, height: H, frameRate: cfg.fps },
-        fastStart: 'in-memory',
-      });
-    } else {
-      muxer = new WebmMuxer({
-        target: new WebmTarget(),
-        video: { codec: 'V_VP9', width: W, height: H, frameRate: cfg.fps },
-      });
-    }
-    const encoder = new VideoEncoder({
-      output: (chunk, m) => muxer.addVideoChunk(chunk, m),
-      error: (e) => console.error('encoder error', e),
-    });
-    encoder.configure({
-      codec: chosen.codec, width: W, height: H,
-      bitrate: 40e6, framerate: cfg.fps,
-      latencyMode: 'quality',
-    });
-    return { muxer, encoder };
+  stop() {
+    if (this.active) this.media.stop();
   }
 
-  async setupPngSink(cfg) {
-    // Prefer a real directory (streams to disk, unbounded takes);
-    // fall back to an in-memory store-only zip.
-    if (window.showDirectoryPicker) {
-      try {
-        const root = await window.showDirectoryPicker({ mode: 'readwrite' });
-        const dir = await root.getDirectoryHandle(`take_${this.app.takeHash}`, { create: true });
-        return {
-          async write(name, blob) {
-            const fh = await dir.getFileHandle(name, { create: true });
-            const w = await fh.createWritable();
-            await w.write(blob);
-            await w.close();
-          },
-          async close() {},
-        };
-      } catch (e) {
-        if (e.name === 'AbortError') throw new Error('recording cancelled — no folder chosen');
-        // fall through to zip
-      }
-    }
-    const zip = new ZipStore();
-    const app = this.app;
-    return {
-      async write(name, blob) {
-        zip.add(name, new Uint8Array(await blob.arrayBuffer()));
-      },
-      async close() {
-        download(zip.finalize(), `take_${app.takeHash}_png_seq.zip`);
-      },
+  cancel() {
+    this.stop();
+  }
+
+  captureTarget(source, W, H) {
+    if (W === source.width && H === source.height) return source;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    this.captureCanvas = c;
+    this.captureCtx = c.getContext('2d', { alpha: false });
+    this.captureCtx.imageSmoothingEnabled = true;
+    this.captureCtx.imageSmoothingQuality = 'high';
+    const copy = () => {
+      this.captureCtx.drawImage(source, 0, 0, W, H);
+      this.copyRaf = requestAnimationFrame(copy);
     };
+    copy();
+    return c;
   }
 
-  async capture(canvas, capCanvas, capCtx, scale) {
-    if (scale !== 1) {
-      capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
-      capCtx.drawImage(canvas, 0, 0, capCanvas.width, capCanvas.height);
-      return capCanvas.convertToBlob({ type: 'image/png' });
-    }
-    return new Promise((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png'));
+  stopCopyLoop() {
+    if (this.copyRaf) cancelAnimationFrame(this.copyRaf);
+    this.copyRaf = 0;
+    this.captureCanvas = null;
+    this.captureCtx = null;
+  }
+
+  stopTracks() {
+    if (!this.stream) return;
+    for (const track of this.stream.getTracks()) track.stop();
+    this.stream = null;
+  }
+
+  cleanup() {
+    clearInterval(this.timer);
+    this.timer = 0;
+    this.stopCopyLoop();
+    this.stopTracks();
   }
 }
 
-function pad(n) { return String(n).padStart(5, '0'); }
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function even(value) {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function chooseMimes(format = 'webm') {
+  const prefs = format === 'mp4'
+    ? ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const supported = prefs.filter((mime) => !MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(mime));
+  return supported.length ? supported : [''];
+}
 
 function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 1000);
+}
+
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }

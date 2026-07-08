@@ -92,7 +92,7 @@ export class TimelineUI {
   renderFields(type) {
     const p = this.app.params;
     const F = {
-      sprinkle: [['count', p.sprinkleCount], ['radius', p.sprinkleR], ['clump', p.sprinkleClump]],
+      sprinkle: [['count', p.sprinkleCount], ['strayCount', p.strayCount], ['radius', p.sprinkleR], ['clump', p.sprinkleClump]],
       current: [['amp', p.currentA], ['freq', p.acFreq], ['rampDur', p.rampDur]],
       tap: [['strength', p.tapStrength]],
       tapBurst: [['n', 4], ['interval', 0.5], ['strength', p.tapStrength]],
@@ -122,8 +122,8 @@ export class TimelineUI {
       row.className = 'ctl';
       row.innerHTML = `<label>pattern</label>
         <select data-f="pattern">
-          <option value="disk">disk</option><option value="ring">ring</option>
-          <option value="sheet">sheet</option>
+          <option value="sheet">sheet</option><option value="disk">disk</option>
+          <option value="ring">ring</option>
         </select>`;
       this.fieldsEl.appendChild(row);
     }
@@ -150,7 +150,7 @@ export class TimelineUI {
 
 function describe(ev) {
   switch (ev.type) {
-    case 'sprinkle': return `sprinkle ${fmtK(ev.count)} ${ev.pattern || 'disk'}`;
+    case 'sprinkle': return `sprinkle ${fmtK(ev.count)} + ${fmtK(ev.strayCount ?? 0)} stray ${ev.pattern || 'sheet'}`;
     case 'current':
       if (ev.on === false || ev.amp === 0) return 'current OFF';
       return `current ${ev.amp} A ${ev.mode === 'ac' ? `AC ${ev.freq ?? ''} Hz` : 'DC'}`;

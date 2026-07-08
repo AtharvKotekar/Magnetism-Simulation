@@ -2,7 +2,7 @@
 // the worker (never from wall-clock timers) so takes replay deterministically.
 //
 // Event shapes:
-//   { t, type: 'sprinkle', count, pattern, radius, clump }
+//   { t, type: 'sprinkle', count, strayCount, pattern, radius, clump }
 //   { t, type: 'current',  on, amp, mode, freq, rampDur }
 //   { t, type: 'tap',      strength }
 //   { t, type: 'tapBurst', n, interval, strength }   (expanded into taps)

@@ -106,7 +106,7 @@ export const DEFAULT_CALIBRATION = {
   sheetW: 0.40,            // meters
   sheetH: 0.30,
   wireHeight: 0.30,        // meters from cardboard to crossbar along the wire
-  holeWallR: 0.013,        // meters, physical no-go radius around the wire
+  holeWallR: 0.0115,       // meters, physical no-go radius around the wire
 };
 
 const LS_KEY = 'magnetism-stage-calibration-v1';

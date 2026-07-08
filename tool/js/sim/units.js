@@ -21,7 +21,7 @@ export const DEFAULT_PARAMS = {
   sheetH: 0.30,
   holeX: 0.20,            // overwritten from calibration backprojection
   holeY: 0.15,
-  holeWallR: 0.013,       // filings cannot enter this radius (hole rim)
+  holeWallR: 0.0115,      // filings cannot enter this radius (hole rim)
   wireR: 0.002,           // wire radius, regularizes B near r=0
 
   // --- current ---
@@ -29,8 +29,8 @@ export const DEFAULT_PARAMS = {
   currentMode: 'dc',      // 'dc' | 'ac'
   acFreq: 5,              // Hz
   rampDur: 0.4,           // s, linear ramp between current targets
-  currentDir: -1,         // -1: down through the hole (matches drawn wire path)
-  currentOn: false,
+  currentDir: 1,          // -1: down through the hole; 1: up through the hole
+  currentOn: true,
 
   // --- ambient (Earth) field ---
   ambientOn: true,
@@ -38,7 +38,7 @@ export const DEFAULT_PARAMS = {
   ambientAngle: 0.6,      // rad, in-plane direction
 
   // --- filings material/geometry ---
-  filingMedianL: 0.50e-3, // m
+  filingMedianL: 0.70e-3, // m
   filingSigmaLn: 0.22,
   filingMinL: 0.16e-3,
   filingMaxL: 1.05e-3,
@@ -48,21 +48,23 @@ export const DEFAULT_PARAMS = {
   coerciveH: 250,         // A/m, |H∥| above this re-sets remanence sign
 
   // --- visual animator cheats ---
-  maxVisualParticles: 18000,
+  maxVisualParticles: 27000,
+  maxResponsiveFilings: 18000,
   currentAutoAlign: false,// first current-on waits for tap; later increases move
-  currentMotion: 0.72,    // how strongly current changes push the pattern
-  visualFriction: 0.42,   // 0 = slides freely, 1 = mostly rotates in place
-  slideAmount: 1.1,       // artistic multiplier for visible translation
-  fieldReach30A: 0.145,   // m, hard affected radius at 30 A
+  currentMotion: 0.50,    // how strongly current changes push the pattern
+  visualFriction: 0.25,   // 0 = slides freely, 1 = mostly rotates in place
+  slideAmount: 1.0,       // artistic multiplier for visible translation
+  fieldReach30A: 0.080,   // m, 20% of default cardboard width at 30 A
   fieldReferenceR: 0.058, // m, normalizes the 1/r response strength
-  fieldFalloffPower: 0.95,
+  fieldFalloffPower: 1.15,
   fieldMinResponse: 0.006,
-  chainSpacing: 0.0056,   // m, radial spacing between visible filing bands
+  chainSpacing: 0.0030,   // m, radial spacing between visible filing bands
   chainCapture: 0.96,     // how strongly filings snap toward chain bands
-  chainStrength: 1.35,    // magnetized-neighbor chaining multiplier
-  inwardPull: 0.0065,     // m, slight gradient drift toward stronger field
-  alignSpeed: 3.8,        // position interpolation speed
-  rotateSpeed: 6.8,       // angle interpolation speed
+  chainStrength: 0.30,    // magnetized-neighbor chaining multiplier
+  inwardPull: 0.00325,    // m, slight gradient drift toward stronger field
+  rimClearance: 0.0004,   // m, tiny no-settle buffer outside the hole rim
+  alignSpeed: 4.0,        // position interpolation speed
+  rotateSpeed: 5.25,      // angle interpolation speed
   airborneAlignSpeed: 11.0,
   airborneRotateSpeed: 15.0,
 
@@ -72,8 +74,10 @@ export const DEFAULT_PARAMS = {
   restitution: 0.1,
 
   // --- taps ---
-  tapStrength: 8,         // peak plate acceleration, in g's
+  tapStrength: 8.0,       // peak plate acceleration, in g's
   tapDur: 0.008,          // s, half-sine push
+  tapLiftAll: 1.0,         // 1 = every filing lifts when the cardboard is tapped
+  tapJitterAmount: 0.28,   // lateral per-filing wobble while airborne
   autoTapRate: 0,         // Hz (Poisson); 0 = off
 
   // --- integration ---
@@ -83,10 +87,12 @@ export const DEFAULT_PARAMS = {
   neighborCutoff: 3.0e-3, // m, dipole interaction radius (= hash cell size)
 
   // --- sprinkle defaults ---
-  sprinkleCount: 11000,
-  sprinkleR: 0.17,        // m, disk radius around hole
-  sprinklePattern: 'disk',// 'disk' | 'ring' | 'sheet'
-  sprinkleClump: 0.03,    // 0 = uniform Poisson, 1 = heavily clustered
+  sprinkleCount: 18000,
+  strayCount: 2401,
+  sprinkleR: 0.190,       // m, disk radius around hole
+  sprinklePattern: 'sheet', // 'disk' | 'ring' | 'sheet'
+  sprinkleClump: 0.65,    // 0 = nearly even, 1 = strongest center density
+  sprinkleEdgeMargin: 0.004,
 
   seed: 1337,
 };

@@ -1,14 +1,44 @@
+import { DEFAULT_UI } from './defaults.js';
+
 // Preset takes. Each is { name, hint, duration, params?, timeline }.
 // Timelines use the un-expanded event grammar from sim/timeline.js.
 
 export const PRESETS = [
   {
     name: 'Manual stage',
-    hint: 'Starts with only a random sprinkle. Turn current on and tap when you want the reveal.',
+    hint: 'Starts from the saved filming setup: current on, dense sprinkle, tap when you want the reveal.',
     duration: 20,
-    params: { currentA: 30, currentMode: 'dc', currentAutoAlign: false },
+    ui: { ...DEFAULT_UI },
+    cal: { holeWallR: 0.0115 },
+    params: {
+      currentA: 30,
+      currentMode: 'dc',
+      acFreq: 5,
+      rampDur: 0.4,
+      currentDir: 1,
+      currentAutoAlign: false,
+      currentMotion: 0.50,
+      fieldReach30A: 0.080,
+      fieldFalloffPower: 1.15,
+      chainSpacing: 0.003,
+      chainStrength: 0.30,
+      inwardPull: 0.00325,
+      visualFriction: 0.25,
+      slideAmount: 1.00,
+      alignSpeed: 4.0,
+      rotateSpeed: 5.25,
+      tapStrength: 8.0,
+      tapLiftAll: 1.0,
+      tapJitterAmount: 0.28,
+      filingMedianL: 0.70e-3,
+      sprinkleCount: 18000,
+      strayCount: 2401,
+      sprinkleR: 0.190,
+      sprinklePattern: 'sheet',
+      sprinkleClump: 0.65,
+    },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 11000, pattern: 'disk', radius: 0.17, clump: 0.03 },
+      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2401, pattern: 'sheet', radius: 0.190, clump: 0.65 },
     ],
   },
   {
@@ -17,7 +47,7 @@ export const PRESETS = [
     duration: 9,
     params: { currentA: 30, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 11000, pattern: 'disk', radius: 0.17, clump: 0.03 },
+      { t: 0.2, type: 'sprinkle', count: 14000, strayCount: 3000, pattern: 'sheet', radius: 0.17, clump: 0.01 },
       { t: 2.0, type: 'current', on: true, amp: 30, mode: 'dc', rampDur: 0.5 },
       { t: 3.0, type: 'tap', strength: 8 },
       { t: 3.6, type: 'tap', strength: 8 },
@@ -32,7 +62,7 @@ export const PRESETS = [
     duration: 9,
     params: { currentA: 80, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 13000, pattern: 'disk', radius: 0.18, clump: 0.04 },
+      { t: 0.2, type: 'sprinkle', count: 15000, strayCount: 3000, pattern: 'sheet', radius: 0.18, clump: 0.01 },
       { t: 1.8, type: 'current', on: true, amp: 80, mode: 'dc', rampDur: 0.6 },
       { t: 2.8, type: 'tapBurst', n: 5, interval: 0.55, strength: 9 },
       { t: 6.2, type: 'tap', strength: 5 },
@@ -44,7 +74,7 @@ export const PRESETS = [
     duration: 12,
     params: { currentA: 30, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 11000, pattern: 'disk', radius: 0.17, clump: 0.03 },
+      { t: 0.2, type: 'sprinkle', count: 14000, strayCount: 3000, pattern: 'sheet', radius: 0.17, clump: 0.01 },
       { t: 1.5, type: 'current', on: true, amp: 30, mode: 'dc', rampDur: 0.4 },
       { t: 6.0, type: 'tapBurst', n: 6, interval: 0.6, strength: 8 },
     ],
@@ -55,7 +85,7 @@ export const PRESETS = [
     duration: 10,
     params: { currentA: 45, currentMode: 'ac', acFreq: 8 },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 11000, pattern: 'disk', radius: 0.17, clump: 0.03 },
+      { t: 0.2, type: 'sprinkle', count: 14000, strayCount: 3000, pattern: 'sheet', radius: 0.17, clump: 0.01 },
       { t: 1.5, type: 'current', on: true, amp: 45, mode: 'ac', freq: 8, rampDur: 0.8 },
       { t: 3.0, type: 'autoTap', rate: 1.2 },
       { t: 8.0, type: 'autoTap', rate: 0 },
@@ -67,7 +97,7 @@ export const PRESETS = [
     duration: 14,
     params: { currentA: 40, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 11000, pattern: 'disk', radius: 0.17, clump: 0.03 },
+      { t: 0.2, type: 'sprinkle', count: 14000, strayCount: 3000, pattern: 'sheet', radius: 0.17, clump: 0.01 },
       { t: 1.5, type: 'current', on: true, amp: 40, mode: 'dc', rampDur: 0.4 },
       { t: 2.5, type: 'tapBurst', n: 4, interval: 0.5, strength: 8 },
       { t: 7.0, type: 'current', on: true, amp: -40, mode: 'dc', rampDur: 0.8 },

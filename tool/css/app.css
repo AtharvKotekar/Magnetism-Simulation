@@ -69,21 +69,6 @@ button.active { background: var(--accent2); color: #1a120a; border-color: var(--
 }
 .pin.dragging { cursor: grabbing; background: rgba(232,162,75,.5); }
 
-/* record overlay */
-#record-overlay {
-  position: absolute; inset: 0; background: rgba(10,8,6,.72);
-  display: flex; align-items: center; justify-content: center; z-index: 30;
-}
-#record-overlay.hidden { display: none; }
-.rec-box {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-  padding: 22px 28px; width: 380px; text-align: center;
-}
-.rec-title { font-weight: 700; margin-bottom: 12px; color: var(--accent); }
-.rec-bar { height: 8px; background: #0e0c0a; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
-#rec-progress { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
-#rec-status { color: var(--dim); margin-bottom: 12px; font-variant-numeric: tabular-nums; }
-
 /* side panel */
 #panel {
   width: 320px; background: var(--panel); border-left: 1px solid var(--line);
@@ -108,8 +93,21 @@ button.active { background: var(--accent2); color: #1a120a; border-color: var(--
   min-width: 0;
 }
 .ctl input[type=checkbox] { accent-color: var(--accent2); }
+.ctl input[type=color] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px;
+}
 .ctl-row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
 .ctl-row button { flex: 1; }
+.subhead {
+  color: var(--accent); font-size: 11px; font-weight: 800;
+  letter-spacing: 1.1px; margin: 12px 0 6px;
+}
 .hint { color: var(--dim); font-size: 11px; margin: 4px 0; line-height: 1.5; }
 .diag { font-size: 11.5px; color: var(--dim); line-height: 1.7; font-variant-numeric: tabular-nums; }
 .diag b { color: var(--text); font-weight: 600; }

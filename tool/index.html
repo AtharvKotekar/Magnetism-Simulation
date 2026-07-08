@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Magnetism Stage — Iron Filings Simulator</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/app.css?v=field-motion">
 </head>
 <body>
 <div id="app">
@@ -28,14 +28,6 @@
     <div id="stage">
       <canvas id="gl-canvas" width="2752" height="1536"></canvas>
       <div id="pin-layer"></div>
-      <div id="record-overlay" class="hidden">
-        <div class="rec-box">
-          <div class="rec-title">Rendering take…</div>
-          <div class="rec-bar"><div id="rec-progress"></div></div>
-          <div id="rec-status">frame 0 / 0</div>
-          <button id="btn-cancel-record">Cancel</button>
-        </div>
-      </div>
     </div>
     <aside id="panel"></aside>
   </main>
@@ -50,6 +42,6 @@
     <div id="timeline-events"></div>
   </footer>
 </div>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=field-motion"></script>
 </body>
 </html>

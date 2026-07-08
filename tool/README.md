@@ -20,8 +20,8 @@ python3 -m http.server 8734
 # open http://localhost:8734 in Chrome or Edge
 ```
 
-**Use Chrome/Edge on the recording workstation** — recording uses WebCodecs
-(MP4/WebM) and the File System Access API (PNG sequences).
+**Use Chrome/Edge on the recording workstation** — live recording uses the
+browser MediaRecorder API and downloads a video when you stop.
 
 ## Why it is fast now
 
@@ -52,9 +52,9 @@ This is intentionally cheated for clean video output.
   the line mode still reads as iron filings but is much faster.
 - **Preview density** (View section) can draw 1/2, 1/4, or 1/8 of the filings
   while you work.
-- **Lift visibility** and **Board vibration cue** (Tap section) make the tap
-  read cinematically: filings visibly hop, translate, and rotate while the
-  board gives a short damped vibration.
+- **Lift visibility** and **Tap vibration cue** (Tap section) make the tap
+  read cinematically: filings visibly hop, translate, rotate, and give a short
+  vibration cue without repainting the cardboard layer.
 - **Motion Cheat** controls how strongly current changes and taps steer the
   pattern. This is the main place to tune the shot.
 - **Calibration** (View section): drag the 4 corner pins onto the cardboard
@@ -66,20 +66,14 @@ This is intentionally cheated for clean video output.
 
 ## Recording
 
-`● Record` restarts the take from t = 0 and renders frame-by-frame,
-decoupled from wall clock (slower than realtime, full quality, deterministic).
+`● Record` starts a live capture of exactly what you do in the viewport.
+Press `Stop recording` when the take is done; the browser downloads the video.
 
-- **MP4 (H.264)** or **WebM (VP9)** — downloads video + a JSON sidecar with
-  every parameter needed to re-render the take.
-- **PNG sequence** — pick an output folder (Chrome). Optional **alpha pass**
-  writes `filings_alpha_#####.png` (filings + shadows only, premultiplied
-  alpha, wire occlusion punched out) for compositing in your pipeline.
-  Without folder access it falls back to a single .zip download.
-- FPS: 24 / 25 / 30 / 48 / 60. Resolution up to the native 2752×1536.
-- The default setup is now meant to record: native resolution, draft lines,
-  full visual density, no shadows, and 1 animation step/frame.
-- For a slightly richer look, switch Recording → Filing detail to capsules or
-  turn Record shadows on.
+- **WebM** is the safest browser recording format. **MP4** is attempted when
+  the browser supports it and otherwise falls back to WebM.
+- FPS: 24 / 25 / 30 / 48 / 60. The default is 24 fps for film-style takes.
+- Resolution: 2K 2048×1152, 1080p 1920×1080, native 2752×1536, or 720p quick.
+- Quality: Draft / High / Ultra. Ultra requests a 160 Mbps video bitrate.
 
 ## Layout
 
@@ -89,8 +83,7 @@ decoupled from wall clock (slower than realtime, full quality, deterministic).
   (homography-projected, Kajiya–Kay fiber shading), overlays (flow dashes,
   field-line preview, calibration grid), homography/DLT math.
 - `js/ui/` — panel, timeline editor, calibration pins, presets.
-- `js/record/` — frame-stepped recorder, mp4/webm via vendored muxers,
-  PNG-sequence sink, store-only zip fallback.
+- `js/record/` — live canvas recorder using browser MediaRecorder.
 
 Animation runs in a Web Worker on typed arrays; render state streams to the
 main thread as transferable buffers. No build step.

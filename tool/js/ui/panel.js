@@ -39,38 +39,88 @@ export function buildPanel(root, app) {
     const dirRow = document.createElement('div');
     dirRow.className = 'ctl-row';
     const dirBtn = document.createElement('button');
-    dirBtn.textContent = '⬇ current flows DOWN through hole';
-    dirBtn.onclick = () => {
-      app.params.currentDir *= -1;
+    const updateDirText = () => {
       dirBtn.textContent = app.params.currentDir < 0
         ? '⬇ current flows DOWN through hole'
         : '⬆ current flows UP through hole';
+    };
+    updateDirText();
+    dirBtn.onclick = () => {
+      app.params.currentDir *= -1;
+      updateDirText();
       app.pushParams({ currentDir: app.params.currentDir });
       if (app.ui.currentOn) app.liveCurrent();
     };
     dirRow.appendChild(dirBtn);
     b.appendChild(dirRow);
-    check(b, 'Flow indicator on wire', app.ui.showIndicator, (v) => { app.ui.showIndicator = v; });
+    subhead(b, 'CONDUCTOR OVERLAY');
+    check(b, 'Overlay visible', app.ui.showIndicator, (v) => { app.ui.showIndicator = v; });
+    check(b, 'Pulses', app.ui.showCurrentPulses, (v) => { app.ui.showCurrentPulses = v; });
+    check(b, 'Comets', app.ui.showCurrentComets, (v) => { app.ui.showCurrentComets = v; });
+    check(b, 'Comet arrows', app.ui.showCurrentCometHeads, (v) => { app.ui.showCurrentCometHeads = v; });
+    check(b, 'Arrows', app.ui.showCurrentArrows, (v) => { app.ui.showCurrentArrows = v; });
+    color(b, 'Overlay color', app.ui.currentIndicatorColor, (v) => { app.ui.currentIndicatorColor = v; });
+    slider(b, 'Pulse brightness', 0.2, 2, 0.05, app.ui.currentIndicatorStrength, '×', (v) => {
+      app.ui.currentIndicatorStrength = v;
+    });
+    slider(b, 'Pulse speed', 0.1, 3, 0.05, app.ui.currentPulseSpeed, '×', (v) => {
+      app.ui.currentPulseSpeed = v;
+    });
+    slider(b, 'Pulse spacing', 60, 320, 5, app.ui.currentPulseSpacing, ' px', (v) => {
+      app.ui.currentPulseSpacing = v;
+    });
+    slider(b, 'Pulse width', 0.02, 0.18, 0.005, app.ui.currentPulseWidth, '', (v) => {
+      app.ui.currentPulseWidth = v;
+    });
+    slider(b, 'Comet tail', 0.6, 8, 0.1, app.ui.currentCometTail, '×', (v) => {
+      app.ui.currentCometTail = v;
+    });
+    slider(b, 'Comet arrow size', 0.25, 2, 0.05, app.ui.currentCometHeadSize, '×', (v) => {
+      app.ui.currentCometHeadSize = v;
+    });
+    slider(b, 'Track width', 4, 24, 1, app.ui.currentTrackWidth, ' px', (v) => {
+      app.ui.currentTrackWidth = v;
+      app.rebuildCurrentOverlay();
+    });
+    slider(b, 'Arrow spacing', 120, 700, 20, app.ui.currentArrowSpacing, ' px', (v) => {
+      app.ui.currentArrowSpacing = v;
+      app.rebuildCurrentOverlay();
+    });
+    slider(b, 'Arrow size', 0.4, 2, 0.05, app.ui.currentArrowSize, '×', (v) => {
+      app.ui.currentArrowSize = v;
+      app.rebuildCurrentOverlay();
+    });
+    color(b, 'Arrow color', app.ui.currentArrowColor, (v) => { app.ui.currentArrowColor = v; });
+    slider(b, 'Arrow brightness', 0.2, 2, 0.05, app.ui.currentArrowStrength, '×', (v) => {
+      app.ui.currentArrowStrength = v;
+    });
   }
 
   // ---------- FILINGS ----------
   {
     const b = S('FILINGS');
-    slider(b, 'Visible filings', 500, app.params.maxVisualParticles, 100, app.params.sprinkleCount, '', (v) => {
+    slider(b, 'Responsive filings', 500, app.params.maxResponsiveFilings ?? app.params.maxVisualParticles, 100, app.params.sprinkleCount, '', (v) => {
       app.params.sprinkleCount = v;
     });
-    select(b, 'Pattern', [['disk', 'disk around wire'], ['ring', 'ring'], ['sheet', 'whole sheet']],
+    slider(b, 'Stray filings', 1, 9000, 1, app.params.strayCount, '', (v) => {
+      app.params.strayCount = v;
+    });
+    select(b, 'Pattern', [['sheet', 'whole cardboard'], ['disk', 'disk around wire'], ['ring', 'ring']],
       app.params.sprinklePattern, (v) => { app.params.sprinklePattern = v; });
     slider(b, 'Spread radius', 0.03, 0.19, 0.005, app.params.sprinkleR, ' m', (v) => {
       app.params.sprinkleR = v;
     });
-    slider(b, 'Clumpiness', 0, 1, 0.05, app.params.sprinkleClump, '', (v) => {
+    slider(b, 'Center density', 0, 1, 0.05, app.params.sprinkleClump, '', (v) => {
       app.params.sprinkleClump = v;
     });
-    slider(b, 'Median length', 0.15, 1.0, 0.05, app.params.filingMedianL * 1e3, ' mm', (v) => {
+    slider(b, 'Filing length', 0.15, 1.0, 0.05, app.params.filingMedianL * 1e3, ' mm', (v) => {
       app.params.filingMedianL = v * 1e-3;
       app.pushParams({ filingMedianL: app.params.filingMedianL });
       app.refreshDiagnostics();
+    });
+    slider(b, 'Hole radius', 6, 24, 0.5, app.cal.holeWallR * 1000, ' mm', (v) => {
+      app.cal.holeWallR = v * 1e-3;
+      app.calibrationChanged(false);
     });
     const row = document.createElement('div');
     row.className = 'ctl-row';
@@ -94,6 +144,17 @@ export function buildPanel(root, app) {
     slider(b, 'Lift visibility', 1, 8, 0.5, app.ui.liftScale, '×', (v) => {
       app.ui.liftScale = v;
     });
+    slider(b, 'Board shake', 0, 3, 0.1, app.ui.boardShake, '×', (v) => {
+      app.ui.boardShake = v;
+    });
+    slider(b, 'Global lift', 0, 1.5, 0.05, app.params.tapLiftAll, '×', (v) => {
+      app.params.tapLiftAll = v;
+      app.pushParams({ tapLiftAll: v });
+    });
+    slider(b, 'Filing jitter', 0, 1, 0.05, app.params.tapJitterAmount, '×', (v) => {
+      app.params.tapJitterAmount = v;
+      app.pushParams({ tapJitterAmount: v });
+    });
     const row = document.createElement('div');
     row.className = 'ctl-row';
     const bT = document.createElement('button');
@@ -108,7 +169,7 @@ export function buildPanel(root, app) {
       app.params.autoTapRate = v;
       app.pushParams({ autoTapRate: v });
     });
-    check(b, 'Board vibration cue', app.ui.tapVibration, (v) => { app.ui.tapVibration = v; });
+    check(b, 'Tap vibration cue', app.ui.tapVibration, (v) => { app.ui.tapVibration = v; });
   }
 
   // ---------- FIELD RESPONSE ----------
@@ -120,8 +181,10 @@ export function buildPanel(root, app) {
     slider(b, 'Current motion', 0, 1.5, 0.05, app.params.currentMotion, '×', (v) => {
       app.params.currentMotion = v; app.pushParams({ currentMotion: v });
     });
-    slider(b, 'Affected radius', 0.04, 0.17, 0.005, app.params.fieldReach30A, ' m', (v) => {
-      app.params.fieldReach30A = v; app.pushParams({ fieldReach30A: v });
+    slider(b, 'Affected radius', 0, 120, 1, affectedRadiusPercent(app), '%', (v) => {
+      app.params.fieldReach30A = affectedRadiusMeters(app, v);
+      app.pushParams({ fieldReach30A: app.params.fieldReach30A });
+      app.rebuildFieldOverlay();
     });
     slider(b, '1/r falloff', 0.5, 2.2, 0.05, app.params.fieldFalloffPower, '', (v) => {
       app.params.fieldFalloffPower = v; app.pushParams({ fieldFalloffPower: v });
@@ -150,10 +213,93 @@ export function buildPanel(root, app) {
     hint(b, 'The outer edge of the affected radius stays still even when the board is tapped.');
   }
 
+  // ---------- MAGNETIC FIELD ----------
+  {
+    const b = S('MAGNETIC FIELD');
+    check(b, 'Field rings', app.ui.showFieldLines, (v) => { app.ui.showFieldLines = v; });
+    color(b, 'Ring color', app.ui.fieldLineColor, (v) => { app.ui.fieldLineColor = v; });
+    slider(b, 'Ring brightness', 0.2, 3, 0.05, app.ui.fieldLineStrength, '×', (v) => {
+      app.ui.fieldLineStrength = v;
+    });
+    slider(b, 'Max radius', 120, 2200, 10, app.ui.fieldMaxRadiusPx, ' px', (v) => {
+      app.ui.fieldMaxRadiusPx = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'First radius', 8, 220, 1, app.ui.fieldFirstRadiusPx, ' px', (v) => {
+      app.ui.fieldFirstRadiusPx = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Radius multiplier', 1.1, 1.9, 0.01, app.ui.fieldRadiusMultiplier, '×', (v) => {
+      app.ui.fieldRadiusMultiplier = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Falloff curve', 0.6, 1.8, 0.05, app.ui.fieldFalloffCurve, '×', (v) => {
+      app.ui.fieldFalloffCurve = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Line count', 1, 36, 1, app.ui.fieldLineCount, '', (v) => {
+      app.ui.fieldLineCount = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Line thickness', 0.2, 3, 0.05, app.ui.fieldLineThickness, '×', (v) => {
+      app.ui.fieldLineThickness = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Line smoothness', 48, 240, 8, app.ui.fieldLineDetail, '', (v) => {
+      app.ui.fieldLineDetail = v;
+      app.rebuildFieldOverlay();
+    });
+    hint(b, 'Radii follow first radius × multiplier^(ring^falloff), so dense inner rings show the stronger 1/r field near the conductor.');
+    subhead(b, 'FIELD MOTION');
+    check(b, 'Pulses visible', app.ui.showFieldPulses, (v) => { app.ui.showFieldPulses = v; });
+    check(b, 'Comets visible', app.ui.showFieldComets, (v) => { app.ui.showFieldComets = v; });
+    check(b, 'Comet arrows', app.ui.showFieldCometHeads, (v) => { app.ui.showFieldCometHeads = v; });
+    color(b, 'Motion color', app.ui.fieldMotionColor, (v) => { app.ui.fieldMotionColor = v; });
+    slider(b, 'Motion brightness', 0.2, 3, 0.05, app.ui.fieldMotionStrength, '×', (v) => {
+      app.ui.fieldMotionStrength = v;
+    });
+    slider(b, 'Motion speed', 0.05, 3, 0.05, app.ui.fieldMotionSpeed, '×', (v) => {
+      app.ui.fieldMotionSpeed = v;
+    });
+    slider(b, 'Motion spacing', 30, 520, 5, app.ui.fieldMotionSpacing, ' px', (v) => {
+      app.ui.fieldMotionSpacing = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Pulse width', 0.015, 0.18, 0.005, app.ui.fieldPulseWidth, '', (v) => {
+      app.ui.fieldPulseWidth = v;
+    });
+    slider(b, 'Comet tail', 0.6, 8, 0.1, app.ui.fieldCometTail, '×', (v) => {
+      app.ui.fieldCometTail = v;
+    });
+    slider(b, 'Comet arrow size', 0.25, 2, 0.05, app.ui.fieldCometHeadSize, '×', (v) => {
+      app.ui.fieldCometHeadSize = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Motion thickness', 0.15, 1, 0.05, app.ui.fieldMotionThickness, '×', (v) => {
+      app.ui.fieldMotionThickness = v;
+    });
+    subhead(b, 'FIELD ARROWS');
+    check(b, 'Arrows visible', app.ui.showFieldArrows, (v) => { app.ui.showFieldArrows = v; });
+    slider(b, 'Arrow density', 0.25, 3, 0.05, app.ui.fieldArrowDensity, '×', (v) => {
+      app.ui.fieldArrowDensity = v;
+      app.rebuildFieldOverlay();
+    });
+    slider(b, 'Arrow size', 0.4, 2.5, 0.05, app.ui.fieldArrowSize, '×', (v) => {
+      app.ui.fieldArrowSize = v;
+      app.rebuildFieldOverlay();
+    });
+    color(b, 'Arrow color', app.ui.fieldArrowColor, (v) => { app.ui.fieldArrowColor = v; });
+    slider(b, 'Arrow brightness', 0.2, 3, 0.05, app.ui.fieldArrowStrength, '×', (v) => {
+      app.ui.fieldArrowStrength = v;
+    });
+    slider(b, 'Arrow drift', 0, 2, 0.05, app.ui.fieldArrowSpeed, '×', (v) => {
+      app.ui.fieldArrowSpeed = v;
+    });
+  }
+
   // ---------- VIEW ----------
   {
     const b = S('VIEW', false);
-    check(b, 'Field-line preview', app.ui.showFieldLines, (v) => { app.ui.showFieldLines = v; });
     check(b, 'Clip filings to cardboard', app.ui.clipToCardboard, (v) => { app.ui.clipToCardboard = v; });
     select(b, 'Filing detail', [
       ['line', 'fast detailed strokes'],
@@ -205,41 +351,36 @@ export function buildPanel(root, app) {
   {
     const b = S('RECORD');
     select(b, 'Format', [
-      ['mp4', 'MP4 (H.264)'],
-      ['webm', 'WebM (VP9)'],
-      ['png', 'PNG sequence'],
-      ['png-alpha', 'PNG seq + alpha pass'],
+      ['webm', 'WebM'],
+      ['mp4', 'MP4 if browser supports it'],
     ], app.ui.recFormat, (v) => { app.ui.recFormat = v; });
     select(b, 'FPS', [['24', '24 (film)'], ['25', '25'], ['30', '30'], ['48', '48'], ['60', '60']],
       String(app.ui.recFps), (v) => { app.ui.recFps = +v; });
-    num(b, 'Duration (s)', app.ui.recDuration, 0.5, (v) => { app.ui.recDuration = v; });
-    select(b, 'Resolution', [['1', '2752 × 1536 (native)'], ['0.75', '2064 × 1152'], ['0.5', '1376 × 768']],
-      String(app.ui.recScale), (v) => { app.ui.recScale = +v; });
-    select(b, 'Filing detail', [
-      ['line', 'fast detailed strokes'],
-      ['capsule', 'physical capsules'],
-    ], app.ui.recRenderStyle, (v) => { app.ui.recRenderStyle = v; });
-    select(b, 'Filing density', [
-      ['1', 'full'],
-      ['2', '1/2'],
-      ['4', '1/4 (fast)'],
-      ['8', '1/8 (very fast)'],
-    ], String(app.ui.recStride), (v) => { app.ui.recStride = +v; });
-    check(b, 'Record shadows', app.ui.recShadows, (v) => { app.ui.recShadows = v; });
-    num(b, 'Animation steps / frame', app.ui.recSubsteps, 1, (v) => { app.ui.recSubsteps = Math.max(1, Math.round(v)); });
-    num(b, 'Seed', app.params.seed, 1, (v) => { app.params.seed = Math.round(v); app.refreshTakeHash(); });
-    check(b, 'Include flow indicator', app.ui.recIncludeIndicator, (v) => { app.ui.recIncludeIndicator = v; });
+    select(b, 'Resolution', [
+      ['2k', '2K film 2048 × 1152'],
+      ['1080p', '1080p film 1920 × 1080'],
+      ['native', 'native 2752 × 1536'],
+      ['quick', 'quick 1280 × 720'],
+    ], app.ui.recSize, (v) => { app.ui.recSize = v; });
+    select(b, 'Quality', [
+      ['ultra', 'Ultra film (160 Mbps)'],
+      ['high', 'High (90 Mbps)'],
+      ['draft', 'Draft (45 Mbps)'],
+    ], app.ui.recQuality, (v) => { app.ui.recQuality = v; });
     const row = document.createElement('div');
     row.className = 'ctl-row';
     const btn = document.createElement('button');
     btn.className = 'rec';
-    btn.textContent = '● Record take';
-    btn.onclick = () => app.startRecording();
+    btn.textContent = app.recording ? '■ Stop recording' : '● Start recording';
+    btn.onclick = () => app.toggleRecording();
+    app.el.recordPanelButton = btn;
     row.appendChild(btn);
     b.appendChild(row);
-    hint(b, 'Recording restarts the take from t = 0 with the current seed and ' +
-      'renders frame-by-frame (slower than realtime, full quality). Same seed ' +
-      '+ same settings ⇒ identical footage.');
+    const status = document.createElement('div');
+    status.className = 'hint';
+    status.textContent = app.recording ? 'recording...' : 'records exactly what you do live';
+    app.el.recordStatus = status;
+    b.appendChild(status);
   }
 
   // ---------- DIAGNOSTICS ----------
@@ -262,7 +403,7 @@ export function diagnosticsHTML(app, stats) {
   return [
     `sim time ${fmt(stats.time.toFixed(2), ' s')} · awake ${fmt(stats.awake)} / ${fmt(stats.count)}`,
     `I(t) = ${fmt(stats.current.toFixed(1), ' A')}`,
-    `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} field-responsive filings`,
+    `visual mode: ${fmt(p.sprinkleCount.toLocaleString())} responsive + ${fmt((p.strayCount ?? 0).toLocaleString())} stray filings`,
     `affected radius: ${fmt((p.fieldReach30A * 1000).toFixed(0), ' mm')} @ 30 A · friction ${fmt(p.visualFriction.toFixed(2))}`,
     `worker: ${fmt(stats.stepMs.toFixed(1), ' ms')}/frame · preview ${fmt(stats.fps.toFixed(0), ' fps')}`,
     stats.rendered && stats.rendered < stats.count
@@ -303,6 +444,19 @@ function slider(parent, label, min, max, step, value, unit, onInput) {
   return r;
 }
 
+function affectedRadiusPercent(app) {
+  const ref = affectedRadiusReference(app);
+  return ref > 0 ? (app.params.fieldReach30A / ref) * 100 : 0;
+}
+
+function affectedRadiusMeters(app, percent) {
+  return affectedRadiusReference(app) * percent / 100;
+}
+
+function affectedRadiusReference(app) {
+  return Math.max(0.001, app.cal?.sheetW ?? app.params.sheetW ?? 0.4);
+}
+
 function select(parent, label, options, value, onChange) {
   const row = document.createElement('div');
   row.className = 'ctl';
@@ -332,6 +486,28 @@ function check(parent, label, value, onChange) {
   row.append(l, c);
   parent.appendChild(row);
   return c;
+}
+
+function color(parent, label, value, onChange) {
+  const row = document.createElement('div');
+  row.className = 'ctl';
+  const l = document.createElement('label');
+  l.textContent = label;
+  const c = document.createElement('input');
+  c.type = 'color';
+  c.value = value || '#ffffff';
+  c.oninput = () => onChange(c.value);
+  row.append(l, c);
+  parent.appendChild(row);
+  return c;
+}
+
+function subhead(parent, text) {
+  const h = document.createElement('div');
+  h.className = 'subhead';
+  h.textContent = text;
+  parent.appendChild(h);
+  return h;
 }
 
 function num(parent, label, value, step, onChange) {

@@ -57,12 +57,14 @@ layout(location=1) in float aArc;     // arc length px
 layout(location=2) in float aSide;    // -1 / +1 across the wire
 layout(location=3) in float aUnder;   // 1 = under the cardboard
 uniform vec2 uRes;
+uniform vec2 uJitterPx;
 out float vArc;
 out float vSide;
 out float vUnder;
 void main() {
   vArc = aArc; vSide = aSide; vUnder = aUnder;
-  vec2 ndc = vec2(aPos.x / uRes.x * 2.0 - 1.0, 1.0 - aPos.y / uRes.y * 2.0);
+  vec2 px = aPos + uJitterPx;
+  vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
   gl_Position = vec4(ndc, 0.0, 1.0);
 }`;
 
@@ -74,6 +76,11 @@ in float vUnder;
 uniform float uTime;
 uniform float uSpeed;        // px/s, signed by current direction
 uniform float uIntensity;    // 0..1 with current magnitude
+uniform float uSpacing;      // px between moving marks
+uniform float uTail;         // comet tail exponent
+uniform float uPulseWidth;   // pulse width as a phase fraction
+uniform float uWidthFrac;    // 0..1 visible width inside the strip
+uniform float uMode;         // 0 = pulse, 1 = comet
 uniform vec3 uColor;
 uniform sampler2D uCardboard;
 uniform vec2 uRes;
@@ -85,23 +92,29 @@ void main() {
     vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
     if (texture(uCardboard, uv).a > 0.5) discard;
   }
-  // comet-shaped moving dashes: sharp head, fading tail ⇒ readable direction
-  float lambda = 140.0;
-  float phase = fract((vArc - uTime * uSpeed) / lambda);
-  float comet = pow(1.0 - phase, 3.0);
-  float across = 1.0 - abs(vSide);
+  float spacing = max(24.0, uSpacing);
+  float phase = fract((vArc - uTime * uSpeed) / spacing);
+  float comet = pow(max(0.0, 1.0 - phase), max(0.35, uTail));
+  float pulseD = min(phase, 1.0 - phase);
+  float pulseW = clamp(uPulseWidth, 0.015, 0.35);
+  float pulse = exp(-(pulseD * pulseD) / (2.0 * pulseW * pulseW));
+  float mark = mix(pulse, comet, step(0.5, uMode));
+  float widthFrac = clamp(uWidthFrac, 0.12, 1.0);
+  float core = max(0.05, widthFrac * 0.76);
+  float across = 1.0 - smoothstep(core, min(1.0, core + 0.22), abs(vSide));
   float glow = across * across;
-  float a = comet * glow * uIntensity * 0.85;
-  fragColor = vec4(uColor * a, 0.0);   // additive
+  float a = min(0.95, mark * glow * uIntensity * 1.18);
+  fragColor = vec4(uColor * a, a);
 }`;
 
 const LINES_VS = `#version 300 es
 layout(location=0) in vec2 aPlane;    // plane meters
 uniform mat3 uH;
 uniform vec2 uRes;
+uniform vec2 uJitterPx;
 void main() {
   vec3 q = uH * vec3(aPlane, 1.0);
-  vec2 px = q.xy / q.z;
+  vec2 px = q.xy / q.z + uJitterPx;
   vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
   gl_Position = vec4(ndc, 0.0, 1.0);
 }`;
@@ -112,28 +125,184 @@ uniform vec4 uColor;
 out vec4 fragColor;
 void main() { fragColor = vec4(uColor.rgb * uColor.a, uColor.a); }`;
 
+const FIELD_DASH_VS = `#version 300 es
+layout(location=0) in vec2 aPlane;    // plane meters
+layout(location=1) in float aArc;     // ring arc length in image px
+layout(location=2) in float aSide;    // -1 / +1 across the ring stroke
+uniform mat3 uH;
+uniform vec2 uRes;
+uniform vec2 uJitterPx;
+out float vArc;
+out float vSide;
+void main() {
+  vArc = aArc;
+  vSide = aSide;
+  vec3 q = uH * vec3(aPlane, 1.0);
+  vec2 px = q.xy / q.z + uJitterPx;
+  vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
+const FIELD_DASH_FS = `#version 300 es
+precision highp float;
+in float vArc;
+in float vSide;
+uniform float uTime;
+uniform float uSpeed;
+uniform float uIntensity;
+uniform float uSpacing;
+uniform float uTail;
+uniform float uPulseWidth;
+uniform float uWidthFrac;
+uniform float uMode;         // 0 = pulse, 1 = comet
+uniform vec3 uColor;
+out vec4 fragColor;
+void main() {
+  if (uIntensity < 0.003) discard;
+  float spacing = max(12.0, uSpacing);
+  float phase = fract((vArc - uTime * uSpeed) / spacing);
+  float comet = pow(max(0.0, 1.0 - phase), max(0.35, uTail));
+  float pulseD = min(phase, 1.0 - phase);
+  float pulseW = clamp(uPulseWidth, 0.012, 0.35);
+  float pulse = exp(-(pulseD * pulseD) / (2.0 * pulseW * pulseW));
+  float mark = mix(pulse, comet, step(0.5, uMode));
+  float widthFrac = clamp(uWidthFrac, 0.12, 1.0);
+  float core = max(0.05, widthFrac * 0.75);
+  float across = 1.0 - smoothstep(core, min(1.0, core + 0.24), abs(vSide));
+  float a = min(0.95, mark * across * across * uIntensity);
+  fragColor = vec4(uColor * a, a);
+}`;
+
+const FIELD_ARROW_VS = `#version 300 es
+layout(location=0) in float aRadius;  // ring radius in plane meters
+layout(location=1) in float aAngle;   // starting angle in radians
+layout(location=2) in vec2 aLocal;    // local arrow coordinates, meters
+uniform mat3 uH;
+uniform vec2 uRes;
+uniform vec2 uJitterPx;
+uniform vec2 uHole;
+uniform float uTime;
+uniform float uSpeedPx;
+uniform float uPxToM;
+uniform float uDirSign;
+void main() {
+  float angularSpeed = uSpeedPx * uPxToM / max(0.0001, aRadius);
+  float a = aAngle + uTime * angularSpeed * uDirSign;
+  vec2 aNormal = vec2(cos(a), sin(a));
+  vec2 aTangent = vec2(-sin(a), cos(a));
+  vec2 aCenter = uHole + aNormal * aRadius;
+  vec2 p = aCenter + aTangent * (aLocal.x * uDirSign) + aNormal * aLocal.y;
+  vec3 q = uH * vec3(p, 1.0);
+  vec2 px = q.xy / q.z + uJitterPx;
+  vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
+const CURRENT_ARROW_VS = `#version 300 es
+layout(location=0) in vec2 aCenter;   // image px
+layout(location=1) in vec2 aTangent;  // increasing-arc tangent in image px
+layout(location=2) in vec2 aLocal;    // local arrow coordinates, image px
+layout(location=3) in float aUnder;   // 1 = under the cardboard
+uniform vec2 uRes;
+uniform vec2 uJitterPx;
+uniform float uDirSign;
+out float vUnder;
+void main() {
+  vec2 t = normalize(aTangent);
+  vec2 n = vec2(-t.y, t.x);
+  vec2 px = aCenter + t * (aLocal.x * uDirSign) + n * aLocal.y + uJitterPx;
+  vUnder = aUnder;
+  vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
+const CURRENT_ARROW_FS = `#version 300 es
+precision highp float;
+in float vUnder;
+uniform sampler2D uCardboard;
+uniform vec2 uRes;
+uniform vec4 uColor;
+out vec4 fragColor;
+void main() {
+  if (vUnder > 0.5) {
+    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    if (texture(uCardboard, uv).a > 0.5) discard;
+  }
+  fragColor = vec4(uColor.rgb * uColor.a, uColor.a);
+}`;
+
 export class Overlays {
   constructor(gl) {
     this.gl = gl;
     this.dashProg = compileProgram(gl, DASH_VS, DASH_FS);
     this.linesProg = compileProgram(gl, LINES_VS, LINES_FS);
+    this.fieldDashProg = compileProgram(gl, FIELD_DASH_VS, FIELD_DASH_FS);
+    this.fieldArrowProg = compileProgram(gl, FIELD_ARROW_VS, LINES_FS);
+    this.currentArrowProg = compileProgram(gl, CURRENT_ARROW_VS, CURRENT_ARROW_FS);
     this.du = {};
-    for (const n of ['uRes', 'uTime', 'uSpeed', 'uIntensity', 'uColor', 'uCardboard'])
+    for (const n of [
+      'uRes', 'uJitterPx', 'uTime', 'uSpeed', 'uIntensity', 'uSpacing',
+      'uTail', 'uPulseWidth', 'uWidthFrac', 'uMode', 'uColor', 'uCardboard',
+    ])
       this.du[n] = gl.getUniformLocation(this.dashProg, n);
     this.lu = {
       uH: gl.getUniformLocation(this.linesProg, 'uH'),
       uRes: gl.getUniformLocation(this.linesProg, 'uRes'),
+      uJitterPx: gl.getUniformLocation(this.linesProg, 'uJitterPx'),
       uColor: gl.getUniformLocation(this.linesProg, 'uColor'),
     };
-    this.buildDashGeometry();
+    this.fdu = {};
+    for (const n of [
+      'uH', 'uRes', 'uJitterPx', 'uTime', 'uSpeed', 'uIntensity',
+      'uSpacing', 'uTail', 'uPulseWidth', 'uWidthFrac', 'uMode', 'uColor',
+    ])
+      this.fdu[n] = gl.getUniformLocation(this.fieldDashProg, n);
+    this.fau = {
+      uH: gl.getUniformLocation(this.fieldArrowProg, 'uH'),
+      uRes: gl.getUniformLocation(this.fieldArrowProg, 'uRes'),
+      uJitterPx: gl.getUniformLocation(this.fieldArrowProg, 'uJitterPx'),
+      uHole: gl.getUniformLocation(this.fieldArrowProg, 'uHole'),
+      uTime: gl.getUniformLocation(this.fieldArrowProg, 'uTime'),
+      uSpeedPx: gl.getUniformLocation(this.fieldArrowProg, 'uSpeedPx'),
+      uPxToM: gl.getUniformLocation(this.fieldArrowProg, 'uPxToM'),
+      uDirSign: gl.getUniformLocation(this.fieldArrowProg, 'uDirSign'),
+      uColor: gl.getUniformLocation(this.fieldArrowProg, 'uColor'),
+    };
+    this.cau = {
+      uRes: gl.getUniformLocation(this.currentArrowProg, 'uRes'),
+      uJitterPx: gl.getUniformLocation(this.currentArrowProg, 'uJitterPx'),
+      uDirSign: gl.getUniformLocation(this.currentArrowProg, 'uDirSign'),
+      uColor: gl.getUniformLocation(this.currentArrowProg, 'uColor'),
+      uCardboard: gl.getUniformLocation(this.currentArrowProg, 'uCardboard'),
+    };
+    this.buildCurrentOverlay();
+    this.currentCometHeadVAO = null;
+    this.currentCometHeadBuf = null;
+    this.currentCometHeadCount = 0;
     this.fieldVAO = null;
     this.fieldCount = 0;
+    this.fieldDashVAO = null;
+    this.fieldDashCount = 0;
+    this.fieldArrowVAO = null;
+    this.fieldArrowCount = 0;
+    this.fieldCometHeadVAO = null;
+    this.fieldCometHeadCount = 0;
+    this.fieldPxToM = 1e-4;
   }
 
-  buildDashGeometry() {
+  buildCurrentOverlay(opts = {}) {
+    this.currentLine = buildWirePolyline();
+    this.buildDashGeometry(opts.trackWidth ?? 12.0);
+    this.buildCurrentArrowGeometry({
+      spacing: opts.arrowSpacing ?? 340,
+      size: opts.arrowSize ?? 1,
+    });
+  }
+
+  buildDashGeometry(widthPx = 12.0) {
     const gl = this.gl;
-    const line = buildWirePolyline();
-    const width = 7.0;
+    const line = this.currentLine || buildWirePolyline();
+    const width = Math.max(2.0, widthPx);
     const verts = [];  // x, y, arc, side, under
     for (let i = 0; i < line.length - 1; i++) {
       const a = line[i], b = line[i + 1];
@@ -165,6 +334,39 @@ export class Overlays {
     gl.bindVertexArray(null);
   }
 
+  buildCurrentArrowGeometry(opts = {}) {
+    const gl = this.gl;
+    const line = this.currentLine || buildWirePolyline();
+    const total = line[line.length - 1].s;
+    const size = Math.max(0.25, opts.size ?? 1);
+    const spacing = Math.max(80, opts.spacing ?? 340);
+    const local = [
+      [22 * size, 0],
+      [-18 * size, -9 * size],
+      [-18 * size, 9 * size],
+    ];
+    const verts = []; // center x/y, tangent x/y, local x/y, under
+    for (let s = 270; s < total - 180; s += spacing) {
+      const p = samplePolyline(line, s);
+      if (!p) continue;
+      for (const l of local) {
+        verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+      }
+    }
+    this.currentArrowCount = verts.length / 7;
+    this.currentArrowVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.currentArrowVAO);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    const stride = 28;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 24);
+    gl.bindVertexArray(null);
+  }
+
   // Current flows from the right edge, along the crossbar, DOWN through the
   // hole (dir = -1). Dash motion follows increasing arc length in that case.
   drawCurrentDashes(o) {
@@ -172,12 +374,19 @@ export class Overlays {
     gl.useProgram(this.dashProg);
     gl.bindVertexArray(this.dashVAO);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);            // additive glow
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform2f(this.du.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.du.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform1f(this.du.uTime, o.time);
-    gl.uniform1f(this.du.uSpeed, 420.0 * (o.dir < 0 ? 1 : -1));
-    gl.uniform1f(this.du.uIntensity, Math.min(1, Math.abs(o.currentFrac)));
-    gl.uniform3f(this.du.uColor, 1.0, 0.72, 0.35);
+    gl.uniform1f(this.du.uSpeed, 420.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1));
+    gl.uniform1f(this.du.uIntensity, Math.min(2, Math.abs(o.currentFrac)));
+    gl.uniform1f(this.du.uSpacing, o.spacing ?? 140);
+    gl.uniform1f(this.du.uTail, o.tail ?? 3);
+    gl.uniform1f(this.du.uPulseWidth, o.pulseWidth ?? 0.055);
+    gl.uniform1f(this.du.uWidthFrac, o.widthFrac ?? 1);
+    gl.uniform1f(this.du.uMode, o.mode === 'pulse' ? 0 : 1);
+    const c = o.color || [1.0, 0.72, 0.35];
+    gl.uniform3f(this.du.uColor, c[0], c[1], c[2]);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, o.cardboardTex);
     gl.uniform1i(this.du.uCardboard, 2);
@@ -186,17 +395,156 @@ export class Overlays {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 
-  // Concentric field circles around the hole (preview only).
-  buildFieldLines(holeX, holeY, rMax) {
+  drawCurrentArrows(o) {
+    if (!this.currentArrowCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.currentArrowProg);
+    gl.bindVertexArray(this.currentArrowVAO);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform2f(this.cau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.cau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform1f(this.cau.uDirSign, o.dir < 0 ? 1 : -1);
+    const c = o.color || [1.0, 0.9, 0.35];
+    const a = Math.min(0.92, Math.max(0, o.intensity ?? 1) * 0.42);
+    gl.uniform4f(this.cau.uColor, c[0], c[1], c[2], a);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, o.cardboardTex);
+    gl.uniform1i(this.cau.uCardboard, 2);
+    gl.drawArrays(gl.TRIANGLES, 0, this.currentArrowCount);
+    gl.bindVertexArray(null);
+  }
+
+  drawCurrentCometHeads(o) {
+    const line = this.currentLine || buildWirePolyline();
+    const total = line[line.length - 1]?.s ?? 0;
+    if (!total) return;
+    const gl = this.gl;
+    const spacing = Math.max(60, o.spacing ?? 140);
+    const speedPx = 420.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1);
+    const size = Math.max(0.25, o.cometHeadSize ?? 0.8);
+    const local = [
+      [18 * size, 0],
+      [-14 * size, -7 * size],
+      [-14 * size, 7 * size],
+    ];
+    const verts = [];
+    const start = positiveMod((o.time ?? 0) * speedPx, spacing);
+    for (let s = start; s < total; s += spacing) {
+      const p = samplePolyline(line, s);
+      if (!p) continue;
+      for (const l of local) {
+        verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1], p.under);
+      }
+    }
+    if (!verts.length) return;
+    this.currentCometHeadCount = verts.length / 7;
+    if (!this.currentCometHeadVAO) this.currentCometHeadVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.currentCometHeadVAO);
+    if (!this.currentCometHeadBuf) this.currentCometHeadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.currentCometHeadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+    const stride = 28;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 24);
+
+    gl.useProgram(this.currentArrowProg);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform2f(this.cau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.cau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform1f(this.cau.uDirSign, o.dir < 0 ? 1 : -1);
+    const c = o.color || [1.0, 0.9, 0.35];
+    const a = Math.min(0.94, Math.max(0, o.intensity ?? 1) * 0.52);
+    gl.uniform4f(this.cau.uColor, c[0], c[1], c[2], a);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, o.cardboardTex);
+    gl.uniform1i(this.cau.uCardboard, 2);
+    gl.drawArrays(gl.TRIANGLES, 0, this.currentCometHeadCount);
+    gl.bindVertexArray(null);
+  }
+
+  // Concentric field bands around the hole (preview only). WebGL line width is
+  // implementation-dependent, so draw thin annular strips instead of GL_LINES.
+  buildFieldLines(holeX, holeY, rMax, opts = {}) {
     const gl = this.gl;
     const verts = [];
-    const nRings = 9, seg = 120;
-    for (let k = 1; k <= nRings; k++) {
-      const r = (rMax * k) / nRings;
+    const dashVerts = [];
+    const arrowVerts = [];
+    const cometHeadVerts = [];
+    const nRings = Math.max(1, Math.round(opts.rings ?? 6));
+    const seg = Math.max(36, Math.round(opts.segments ?? 112));
+    const firstRadius = Math.max(0.0001, opts.firstRadius ?? (rMax / Math.max(1, nRings)));
+    const radiusMultiplier = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
+    const falloffCurve = Math.max(0.45, opts.falloffCurve ?? 1);
+    const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
+    const thickness = Math.max(0.15, opts.thickness ?? 1);
+    const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
+    const arrowSize = Math.max(0.25, opts.arrowSize ?? 1);
+    const cometSpacing = Math.max(30, opts.cometSpacing ?? 170);
+    const cometHeadSize = Math.max(0.25, opts.cometHeadSize ?? 0.75);
+    const bandHalfWidth = Math.max(0.00008, pxToM * 1.8) * thickness;
+    const arrowLen = Math.max(0.0024, pxToM * 30) * arrowSize;
+    const arrowWid = arrowLen * 0.45;
+    const cometArrowLen = Math.max(0.0014, pxToM * 20) * cometHeadSize;
+    const cometArrowWid = cometArrowLen * 0.46;
+    this.fieldPxToM = pxToM;
+    let reachedMax = false;
+    for (let k = 0; k < nRings; k++) {
+      const exponent = Math.pow(k, falloffCurve);
+      let r = firstRadius * Math.pow(radiusMultiplier, exponent);
+      if (r > rMax) {
+        if (reachedMax) break;
+        r = rMax;
+        reachedMax = true;
+      }
+      const r0 = Math.max(0.001, r - bandHalfWidth);
+      const r1 = r + bandHalfWidth;
+      const rPx = r / pxToM;
       for (let s = 0; s < seg; s++) {
         const a0 = (s / seg) * Math.PI * 2, a1 = ((s + 1) / seg) * Math.PI * 2;
-        verts.push(holeX + r * Math.cos(a0), holeY + r * Math.sin(a0));
-        verts.push(holeX + r * Math.cos(a1), holeY + r * Math.sin(a1));
+        const p00 = [holeX + r0 * Math.cos(a0), holeY + r0 * Math.sin(a0)];
+        const p01 = [holeX + r0 * Math.cos(a1), holeY + r0 * Math.sin(a1)];
+        const p10 = [holeX + r1 * Math.cos(a0), holeY + r1 * Math.sin(a0)];
+        const p11 = [holeX + r1 * Math.cos(a1), holeY + r1 * Math.sin(a1)];
+        const arc0 = rPx * a0;
+        const arc1 = rPx * a1;
+        verts.push(
+          p00[0], p00[1], p10[0], p10[1], p11[0], p11[1],
+          p00[0], p00[1], p11[0], p11[1], p01[0], p01[1],
+        );
+        dashVerts.push(
+          p00[0], p00[1], arc0, -1, p10[0], p10[1], arc0, 1, p11[0], p11[1], arc1, 1,
+          p00[0], p00[1], arc0, -1, p11[0], p11[1], arc1, 1, p01[0], p01[1], arc1, -1,
+        );
+      }
+      const cometCount = Math.max(1, Math.floor((Math.PI * 2 * rPx) / cometSpacing));
+      const cometLocal = [
+        [cometArrowLen * 0.72, 0],
+        [-cometArrowLen * 0.56, -cometArrowWid],
+        [-cometArrowLen * 0.56, cometArrowWid],
+      ];
+      for (let i = 0; i < cometCount; i++) {
+        const a = (i * cometSpacing) / Math.max(1, rPx);
+        for (const p of cometLocal) {
+          cometHeadVerts.push(r, a, p[0], p[1]);
+        }
+      }
+      if (k > 0 && k < nRings - 1 && arrowDensity > 0) {
+        const count = Math.max(1, Math.round((k % 2 ? 3 : 4) * arrowDensity));
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2 + k * 0.37;
+          const local = [
+            [arrowLen * 0.7, 0],
+            [-arrowLen * 0.55, -arrowWid],
+            [-arrowLen * 0.55, arrowWid],
+          ];
+          for (const p of local) {
+            arrowVerts.push(r, a, p[0], p[1]);
+          }
+        }
       }
     }
     this.fieldCount = verts.length / 2;
@@ -207,6 +555,41 @@ export class Overlays {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    this.fieldDashCount = dashVerts.length / 4;
+    if (!this.fieldDashVAO) this.fieldDashVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldDashVAO);
+    if (!this.fieldDashBuf) this.fieldDashBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldDashBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dashVerts), gl.STATIC_DRAW);
+    const dashStride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, dashStride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, dashStride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, dashStride, 12);
+    gl.bindVertexArray(null);
+
+    this.fieldArrowCount = arrowVerts.length / 4;
+    if (!this.fieldArrowVAO) this.fieldArrowVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldArrowVAO);
+    if (!this.fieldArrowBuf) this.fieldArrowBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldArrowBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrowVerts), gl.STATIC_DRAW);
+    const stride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 1, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, stride, 4);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 8);
+    gl.bindVertexArray(null);
+
+    this.fieldCometHeadCount = cometHeadVerts.length / 4;
+    if (!this.fieldCometHeadVAO) this.fieldCometHeadVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldCometHeadVAO);
+    if (!this.fieldCometHeadBuf) this.fieldCometHeadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldCometHeadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cometHeadVerts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 1, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, stride, 4);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 8);
     gl.bindVertexArray(null);
   }
 
@@ -236,6 +619,7 @@ export class Overlays {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniformMatrix3fv(this.lu.uH, false, o.H);
     gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.lu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform4f(this.lu.uColor, 1.0, 0.65, 0.3, 0.45);
     gl.drawArrays(gl.LINES, 0, this.gridCount);
     gl.bindVertexArray(null);
@@ -250,8 +634,88 @@ export class Overlays {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniformMatrix3fv(this.lu.uH, false, o.H);
     gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
-    gl.uniform4f(this.lu.uColor, 0.55, 0.85, 1.0, 0.35 * o.intensity);
-    gl.drawArrays(gl.LINES, 0, this.fieldCount);
+    gl.uniform2f(this.lu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    const c = o.color || [0.55, 0.85, 1.0];
+    gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], Math.min(0.72, 0.16 * o.intensity));
+    gl.drawArrays(gl.TRIANGLES, 0, this.fieldCount);
     gl.bindVertexArray(null);
   }
+
+  drawFieldDashes(o) {
+    if (!this.fieldDashCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.fieldDashProg);
+    gl.bindVertexArray(this.fieldDashVAO);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix3fv(this.fdu.uH, false, o.H);
+    gl.uniform2f(this.fdu.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.fdu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform1f(this.fdu.uTime, o.time ?? 0);
+    gl.uniform1f(this.fdu.uSpeed, 180.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1));
+    gl.uniform1f(this.fdu.uIntensity, Math.min(3, Math.max(0, o.intensity ?? 1)));
+    gl.uniform1f(this.fdu.uSpacing, o.spacing ?? 160);
+    gl.uniform1f(this.fdu.uTail, o.tail ?? 3);
+    gl.uniform1f(this.fdu.uPulseWidth, o.pulseWidth ?? 0.055);
+    gl.uniform1f(this.fdu.uWidthFrac, o.widthFrac ?? 0.8);
+    gl.uniform1f(this.fdu.uMode, o.mode === 'pulse' ? 0 : 1);
+    const c = o.color || [0.55, 0.85, 1.0];
+    gl.uniform3f(this.fdu.uColor, c[0], c[1], c[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, this.fieldDashCount);
+    gl.bindVertexArray(null);
+  }
+
+  drawFieldArrows(o) {
+    this.drawFieldArrowSet(this.fieldArrowVAO, this.fieldArrowCount, o, 0.32, 180.0 * (o.speed ?? 0));
+  }
+
+  drawFieldCometHeads(o) {
+    this.drawFieldArrowSet(this.fieldCometHeadVAO, this.fieldCometHeadCount, o, 0.46, 180.0 * (o.speed ?? 1));
+  }
+
+  drawFieldArrowSet(vao, count, o, alphaScale, speedPx) {
+    if (!count || !vao) return;
+    const gl = this.gl;
+    gl.useProgram(this.fieldArrowProg);
+    gl.bindVertexArray(vao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix3fv(this.fau.uH, false, o.H);
+    gl.uniform2f(this.fau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.fau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform2f(this.fau.uHole, o.hole?.[0] ?? 0, o.hole?.[1] ?? 0);
+    gl.uniform1f(this.fau.uTime, o.time ?? 0);
+    gl.uniform1f(this.fau.uSpeedPx, speedPx);
+    gl.uniform1f(this.fau.uPxToM, this.fieldPxToM || 1e-4);
+    gl.uniform1f(this.fau.uDirSign, o.dir < 0 ? 1 : -1);
+    const c = o.color || [0.55, 0.85, 1.0];
+    const intensity = Math.max(0, o.intensity ?? 1);
+    gl.uniform4f(this.fau.uColor, c[0], c[1], c[2], Math.min(0.90, alphaScale * intensity));
+    gl.drawArrays(gl.TRIANGLES, 0, count);
+    gl.bindVertexArray(null);
+  }
+}
+
+function samplePolyline(line, targetS) {
+  for (let i = 0; i < line.length - 1; i++) {
+    const a = line[i], b = line[i + 1];
+    if (targetS < a.s || targetS > b.s) continue;
+    const span = Math.max(1e-6, b.s - a.s);
+    const t = (targetS - a.s) / span;
+    let tx = b.x - a.x, ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1;
+    tx /= len; ty /= len;
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      tx,
+      ty,
+      under: a.under > 0.5 || b.under > 0.5 ? 1 : 0,
+    };
+  }
+  return null;
+}
+
+function positiveMod(x, m) {
+  return ((x % m) + m) % m;
 }

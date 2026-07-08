@@ -4,12 +4,13 @@
 import { createGL } from './render/gl.js';
 import { SceneLayers } from './render/scene.js';
 import { FilingRenderer, FLOATS_PER } from './render/filings.js';
-import { Overlays } from './render/overlays.js';
+import { Overlays } from './render/overlays.js?v=field-motion';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
 import { CalibrationUI } from './ui/calibration.js';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=field-motion';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
+import { DEFAULT_UI } from './ui/defaults.js';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
 
@@ -21,30 +22,7 @@ const app = {
   takeHash: '—',
   paused: false,
   recording: false,
-  ui: {
-    currentOn: false,
-    showIndicator: true,
-    showFieldLines: false,
-    clipToCardboard: true,
-    calibrationMode: false,
-    renderStyle: 'line',
-    filingVisibility: 1.25,
-    filingThickness: 0.68,
-    previewStride: 1,
-    previewShadows: false,
-    liftScale: 4,
-    tapVibration: true,
-    recFormat: 'mp4',
-    recFps: 24,
-    recDuration: 9,
-    recScale: 1,
-    recSubsteps: 1,
-    recRenderStyle: 'line',
-    recStride: 1,
-    recShadows: false,
-    recIncludeIndicator: false,
-    logLive: false,
-  },
+  ui: { ...DEFAULT_UI },
   stats: { time: 0, current: 0, count: 0, rendered: 0, awake: 0, fps: 0, stepMs: 0 },
   el: {},
 };
@@ -62,6 +40,7 @@ async function boot() {
   app.filings = new FilingRenderer(gl, app.params.maxParticles);
   app.overlays = new Overlays(gl);
   app.overlays.buildGrid(app.cal.sheetW, app.cal.sheetH);
+  rebuildCurrentOverlay();
 
   rebuildHomography();
 
@@ -94,7 +73,7 @@ function workerReady() {
 
 let pendingReady = null;
 let pendingReset = null;
-let pendingFrame = null;   // resolver for stepFrame during recording
+let pendingFrame = null;   // resolver for deterministic frame stepping
 let tickInFlight = false;
 let lastFrameData = null;
 let lastTickTime = performance.now();
@@ -110,10 +89,8 @@ function onWorkerMessage(e) {
       tickInFlight = false;
       app.stats.stepMs = performance.now() - stepStart;
       handleFrame(m);
-      if (!app.recording) {
-        drawFrame(m, {});
-        updateStats(m);
-      }
+      drawFrame(m, {});
+      updateStats(m);
       break;
     }
     case 'frameStepped': {
@@ -142,7 +119,6 @@ function handleFrame(m) {
 
 function tick(now) {
   requestAnimationFrame(tick);
-  if (app.recording) return;
   const dt = Math.min(0.1, (now - lastTickTime) / 1000);
   if (!tickInFlight) {
     lastTickTime = now;
@@ -172,8 +148,45 @@ function rebuildHomography() {
   app.kUp = wireLenPx / (c.wireHeight || 0.3);
   app.upDir = [dx / wireLenPx, dy / wireLenPx];
   app.detJHole = app.homog.jacobianDet(hp[0], hp[1]);
-  app.overlays.buildFieldLines(hp[0], hp[1], Math.min(c.sheetW, c.sheetH) * 0.42);
+  rebuildFieldOverlay();
 }
+
+function rebuildFieldOverlay() {
+  if (!app.overlays || !app.holePlane) return;
+  const pxPerM = Math.sqrt(Math.max(1e-9, Math.abs(app.detJHole || 1)));
+  const pxToM = 1 / pxPerM;
+  const rMax = Math.max(4, app.ui.fieldMaxRadiusPx ?? 1450) * pxToM;
+  app.overlays.buildFieldLines(app.holePlane[0], app.holePlane[1], rMax, {
+    rings: app.ui.fieldLineCount,
+    firstRadius: Math.max(1, app.ui.fieldFirstRadiusPx ?? 52) * pxToM,
+    radiusMultiplier: app.ui.fieldRadiusMultiplier,
+    falloffCurve: app.ui.fieldFalloffCurve,
+    pxToM,
+    thickness: app.ui.fieldLineThickness,
+    segments: app.ui.fieldLineDetail,
+    arrowDensity: app.ui.fieldArrowDensity,
+    arrowSize: app.ui.fieldArrowSize,
+    cometSpacing: app.ui.fieldMotionSpacing,
+    cometHeadSize: app.ui.fieldCometHeadSize,
+  });
+}
+app.rebuildFieldOverlay = rebuildFieldOverlay;
+
+function rebuildCurrentOverlay() {
+  if (!app.overlays) return;
+  const opts = {
+    trackWidth: app.ui.currentTrackWidth,
+    arrowSpacing: app.ui.currentArrowSpacing,
+    arrowSize: app.ui.currentArrowSize,
+  };
+  if (typeof app.overlays.buildCurrentOverlay === 'function') {
+    app.overlays.buildCurrentOverlay(opts);
+  } else {
+    app.overlays.buildDashGeometry?.(opts.trackWidth);
+    app.overlays.buildCurrentArrowGeometry?.({ spacing: opts.arrowSpacing, size: opts.arrowSize });
+  }
+}
+app.rebuildCurrentOverlay = rebuildCurrentOverlay;
 
 function drawOpts(m, { alphaOnly = false, renderStyle = app.ui.renderStyle, shadows = app.ui.previewShadows } = {}) {
   const jitterPx = alphaOnly ? [0, 0] : tapJitterPx(m);
@@ -202,26 +215,31 @@ function drawOpts(m, { alphaOnly = false, renderStyle = app.ui.renderStyle, shad
 function tapJitterPx(m) {
   if (!app.ui.tapVibration || !m || m.tapAge == null) return [0, 0];
   const age = m.tapAge;
-  if (age < 0 || age > 0.28) return [0, 0];
-  const env = Math.exp(-age * 10) * (1 - age / 0.28);
-  const amp = Math.min(7, 0.58 * (m.tapStrength || app.params.tapStrength)) * env;
-  const x = Math.sin(age * Math.PI * 2 * 37) * amp * 0.34 +
-    Math.sin(age * Math.PI * 2 * 71) * amp * 0.12;
-  const y = Math.sin(age * Math.PI * 2 * 46) * amp;
+  const dur = 0.46;
+  if (age < 0 || age > dur) return [0, 0];
+  const env = Math.exp(-age * 7.0) * (1 - age / dur);
+  const strength = m.tapStrength || app.params.tapStrength;
+  const shake = Math.max(0, app.ui.boardShake ?? 1);
+  const amp = Math.min(7.5, strength * 0.55 * shake) * env;
+  const hit = Math.sin(Math.PI * Math.min(1, age / 0.08));
+  const x = hit * -amp * 0.10 +
+    Math.sin(age * Math.PI * 2 * 26) * amp * 0.36 +
+    Math.sin(age * Math.PI * 2 * 61) * amp * 0.10;
+  const y = hit * amp * 0.16 +
+    Math.sin(age * Math.PI * 2 * 31) * amp * 0.55 +
+    Math.sin(age * Math.PI * 2 * 73) * amp * 0.12;
   return [x, y];
 }
 
 function drawFrame(m, {
-  recording = false,
   indicator = null,
   alphaOnly = false,
-  renderStyle = recording ? app.ui.recRenderStyle : app.ui.renderStyle,
-  shadows = recording ? app.ui.recShadows : app.ui.previewShadows,
+  renderStyle = app.ui.renderStyle,
+  shadows = app.ui.previewShadows,
 } = {}) {
   const gl = app.gl;
   gl.viewport(0, 0, app.canvas.width, app.canvas.height);
   const o = drawOpts(m, { alphaOnly, renderStyle, shadows });
-  app.scene.setJitter(o.jitterPx);
   const drawFilings = () => {
     if (o.renderStyle === 'line') app.filings.drawLines(o);
     else app.filings.drawFilings(o);
@@ -230,32 +248,136 @@ function drawFrame(m, {
   if (alphaOnly) {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    app.scene.setJitter([0, 0]);
     if (o.shadows) app.filings.drawShadows(o);
     drawFilings();
     app.scene.drawOccluderEraser();
     return;
   }
 
+  app.scene.setJitter([0, 0]);
   app.scene.drawScene();
+  // The base scene already contains the cardboard; redrawing it shifted makes
+  // the board exposure pop during taps. Keep the board stable and vibrate the
+  // lifted filings instead.
   if (o.shadows) app.filings.drawShadows(o);
   drawFilings();
+
+  const currentAbs = Math.abs(m?.current ?? 0);
+  const effectiveDir = currentDirection(m);
+  const showFieldMotion = app.ui.showFieldPulses || app.ui.showFieldComets;
+  if ((app.ui.showFieldLines || showFieldMotion || app.ui.showFieldArrows) &&
+      (app.ui.currentOn || currentAbs > 0.5)) {
+    const fieldBase = {
+      H: o.H,
+      res: o.res,
+      jitterPx: [0, 0],
+      dir: effectiveDir,
+      time: m?.time ?? 0,
+      hole: app.holePlane,
+    };
+    if (app.ui.showFieldLines) {
+      app.overlays.drawFieldLines({
+        ...fieldBase,
+        color: hexToRgb(app.ui.fieldLineColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
+      });
+    }
+    if (app.ui.showFieldPulses) {
+      app.overlays.drawFieldDashes({
+        ...fieldBase,
+        mode: 'pulse',
+        color: hexToRgb(app.ui.fieldMotionColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        speed: app.ui.fieldMotionSpeed,
+        spacing: app.ui.fieldMotionSpacing,
+        pulseWidth: app.ui.fieldPulseWidth,
+        tail: app.ui.fieldCometTail,
+        widthFrac: app.ui.fieldMotionThickness,
+      });
+    }
+    if (app.ui.showFieldComets) {
+      app.overlays.drawFieldDashes({
+        ...fieldBase,
+        mode: 'comet',
+        color: hexToRgb(app.ui.fieldMotionColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        speed: app.ui.fieldMotionSpeed,
+        spacing: app.ui.fieldMotionSpacing,
+        pulseWidth: app.ui.fieldPulseWidth,
+        tail: app.ui.fieldCometTail,
+        widthFrac: app.ui.fieldMotionThickness,
+      });
+    }
+    if (app.ui.showFieldComets && app.ui.showFieldCometHeads) {
+      app.overlays.drawFieldCometHeads({
+        ...fieldBase,
+        color: hexToRgb(app.ui.fieldMotionColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        speed: app.ui.fieldMotionSpeed,
+      });
+    }
+    if (app.ui.showFieldArrows) {
+      app.overlays.drawFieldArrows({
+        ...fieldBase,
+        color: hexToRgb(app.ui.fieldArrowColor ?? app.ui.fieldLineColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldArrowStrength),
+        speed: app.ui.fieldArrowSpeed,
+      });
+    }
+  }
+
+  app.scene.setJitter([0, 0]);
   app.scene.drawOccluder();
 
-  const showInd = indicator !== null ? indicator : (app.ui.showIndicator && !recording);
+  const showInd = indicator !== null ? indicator : app.ui.showIndicator;
   if (showInd) {
-    app.overlays.drawCurrentDashes({
+    const currentBase = {
       res: o.res,
       time: m?.time ?? 0,
-      dir: m?.current ?? 0,
-      currentFrac: (m?.current ?? 0) / 20,
+      dir: effectiveDir,
       cardboardTex: app.scene.cardboard.tex,
-    });
+      color: hexToRgb(app.ui.currentIndicatorColor),
+      jitterPx: [0, 0],
+      speed: app.ui.currentPulseSpeed,
+      spacing: app.ui.currentPulseSpacing,
+      pulseWidth: app.ui.currentPulseWidth,
+      tail: app.ui.currentCometTail,
+      cometHeadSize: app.ui.currentCometHeadSize,
+      widthFrac: Math.min(1, Math.max(0.12, app.ui.currentTrackWidth / 18)),
+    };
+    const pulseIntensity = indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentIndicatorStrength);
+    if (app.ui.showCurrentPulses) {
+      app.overlays.drawCurrentDashes({
+        ...currentBase,
+        mode: 'pulse',
+        currentFrac: pulseIntensity,
+      });
+    }
+    if (app.ui.showCurrentComets) {
+      app.overlays.drawCurrentDashes({
+        ...currentBase,
+        mode: 'comet',
+        currentFrac: pulseIntensity,
+      });
+    }
+    if (app.ui.showCurrentComets && app.ui.showCurrentCometHeads) {
+      app.overlays.drawCurrentCometHeads({
+        ...currentBase,
+        color: hexToRgb(app.ui.currentArrowColor ?? app.ui.currentIndicatorColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentArrowStrength),
+      });
+    }
+    if (app.ui.showCurrentArrows) {
+      app.overlays.drawCurrentArrows({
+        ...currentBase,
+        color: hexToRgb(app.ui.currentArrowColor ?? app.ui.currentIndicatorColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentArrowStrength),
+      });
+    }
   }
-  if (!recording && app.ui.showFieldLines && Math.abs(m?.current ?? 0) > 0.5) {
-    app.overlays.drawFieldLines({ H: o.H, res: o.res, intensity: Math.min(1, Math.abs(m.current) / 20) });
-  }
-  if (!recording && app.ui.calibrationMode) {
-    app.overlays.drawGrid({ H: o.H, res: o.res });
+  if (app.ui.calibrationMode) {
+    app.overlays.drawGrid({ H: o.H, res: o.res, jitterPx: o.jitterPx });
   }
 }
 app.drawFrame = (snap, opts) => drawFrame(snap, opts);
@@ -283,6 +405,29 @@ app.refreshDiagnostics = refreshDiagnostics;
 
 function setText(id, t) { const el = document.getElementById(id); if (el) el.textContent = t; }
 
+function currentDirection(m) {
+  const current = m?.current ?? 0;
+  const target = app.ui.currentOn ? app.params.currentA : current;
+  const sign = Math.abs(current) > 0.001 ? Math.sign(current) : Math.sign(target || 1);
+  return sign * (app.params.currentDir || 1);
+}
+
+function indicatorLevel(currentAbs, currentOn, strength = 1) {
+  if (!currentOn && currentAbs <= 0.5) return 0;
+  const base = Math.min(1, currentAbs / 20);
+  return Math.min(2, Math.max(currentOn ? 0.3 : 0, base) * Math.max(0, strength));
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+  if (!m) return [1, 1, 1];
+  return [
+    parseInt(m[1], 16) / 255,
+    parseInt(m[2], 16) / 255,
+    parseInt(m[3], 16) / 255,
+  ];
+}
+
 // ---------- worker actions (live + take control) ----------
 
 function simParams() {
@@ -304,14 +449,16 @@ function pushRenderOptions() {
 }
 app.pushRenderOptions = pushRenderOptions;
 
-app.liveCurrent = () => {
+function sendCurrentState(log = true) {
   const p = app.params;
   const opts = app.ui.currentOn
     ? { on: true, amp: p.currentA, mode: p.currentMode, freq: p.acFreq, rampDur: p.rampDur }
     : { on: false, rampDur: p.rampDur };
   app.worker.postMessage({ type: 'current', opts });
-  logLive({ type: 'current', ...opts });
-};
+  if (log) logLive({ type: 'current', ...opts });
+}
+
+app.liveCurrent = () => sendCurrentState(true);
 
 app.liveTap = () => {
   app.worker.postMessage({ type: 'tap', opts: { strength: app.params.tapStrength } });
@@ -329,7 +476,13 @@ app.liveTapBurst = (n) => {
 
 app.liveSprinkle = () => {
   const p = app.params;
-  const opts = { count: p.sprinkleCount, pattern: p.sprinklePattern, radius: p.sprinkleR, clump: p.sprinkleClump };
+  const opts = {
+    count: p.sprinkleCount,
+    strayCount: p.strayCount,
+    pattern: p.sprinklePattern,
+    radius: p.sprinkleR,
+    clump: p.sprinkleClump,
+  };
   app.worker.postMessage({ type: 'sprinkle', opts });
   logLive({ type: 'sprinkle', ...opts });
 };
@@ -340,7 +493,7 @@ app.liveClear = () => {
 };
 
 function logLive(ev) {
-  if (!app.ui.logLive || app.recording) return;
+  if (!app.ui.logLive) return;
   app.timeline.push({ t: Math.round(app.stats.time * 10) / 10, ...ev });
   timelineChanged(false);
 }
@@ -359,18 +512,26 @@ app.stepFrame = (frameDt, nSub, renderStride = 1) => new Promise((res) => {
   app.worker.postMessage({ type: 'stepFrame', frameDt, nSub, renderStride });
 });
 
-function restartTake() {
-  app.ui.currentOn = false;
+async function restartTake() {
+  const shouldCurrentOn = app.ui.currentOn;
   syncCurrentSwitch();
-  app.resetTake();
+  await app.resetTake();
+  if (shouldCurrentOn) sendCurrentState(false);
 }
 
 function loadPreset(p) {
   app.timeline = structuredClone(p.timeline);
   if (p.params) Object.assign(app.params, p.params);
+  if (p.cal) {
+    Object.assign(app.cal, p.cal);
+    saveCalibration(app.cal);
+  }
+  app.ui.currentOn = p.ui?.currentOn ?? false;
+  if (p.ui) Object.assign(app.ui, p.ui);
   app.takeDuration = p.duration;
-  app.ui.recDuration = p.duration;
-  app.ui.currentOn = false;
+  rebuildFieldOverlay();
+  rebuildCurrentOverlay();
+  app.overlays.buildGrid(app.cal.sheetW, app.cal.sheetH);
   syncCurrentSwitch();
   buildPanel(document.getElementById('panel'), app); // reflect new params
   timelineChanged(true);
@@ -425,41 +586,85 @@ app.setCalibrationMode = (on) => {
 
 // ---------- recording ----------
 
-async function startRecording() {
-  if (app.recording) return;
-  app.recording = true;
-  app.paused = false;
-  const overlay = document.getElementById('record-overlay');
-  const bar = document.getElementById('rec-progress');
-  const status = document.getElementById('rec-status');
-  overlay.classList.remove('hidden');
-  const cfg = {
+function recordingConfig() {
+  return {
     format: app.ui.recFormat,
     fps: app.ui.recFps,
-    duration: app.ui.recDuration,
-    scale: app.ui.recScale,
-    substeps: app.ui.recSubsteps,
-    renderStyle: app.ui.recRenderStyle,
-    renderStride: app.ui.recStride,
-    shadows: app.ui.recShadows,
-    includeIndicator: app.ui.recIncludeIndicator,
+    size: recordingSize(app.ui.recSize),
+    bitrate: recordingBitrate(app.ui.recQuality),
+  };
+}
+
+function recordingBitrate(quality) {
+  if (quality === 'draft') return 45e6;
+  if (quality === 'high') return 90e6;
+  return 160e6;
+}
+
+function recordingSize(size) {
+  if (size === '1080p') return { width: 1920, height: 1080 };
+  if (size === 'native') return { width: app.canvas.width, height: app.canvas.height };
+  if (size === 'quick') return { width: 1280, height: 720 };
+  return { width: 2048, height: 1152 };
+}
+
+function setRecordingUI(active, text = '') {
+  const top = document.getElementById('btn-record');
+  if (top) {
+    top.textContent = active ? '■ Stop recording' : '● Record';
+    top.classList.toggle('active', active);
+  }
+  if (app.el.recordPanelButton) {
+    app.el.recordPanelButton.textContent = active ? '■ Stop recording' : '● Start recording';
+    app.el.recordPanelButton.classList.toggle('active', active);
+  }
+  if (app.el.recordStatus) app.el.recordStatus.textContent = text;
+}
+
+function startRecording() {
+  if (app.recording) return;
+  const cfg = {
+    ...recordingConfig(),
   };
   try {
-    const result = await app.recorder.record(cfg, (f, total) => {
-      bar.style.width = `${(100 * f / total).toFixed(1)}%`;
-      status.textContent = `frame ${f} / ${total}`;
+    app.recording = true;
+    setRecordingUI(true, 'recording 0.0 s');
+    const started = app.recorder.start(cfg, (status) => {
+      setRecordingUI(true, status);
+    }, () => {
+      app.recording = false;
+      setRecordingUI(false, 'saved');
+    }, (err) => {
+      app.recording = false;
+      setRecordingUI(false, 'failed');
+      console.error(err);
+      alert('Recording failed: ' + err.message);
     });
-    status.textContent = result.cancelled ? 'cancelled' : 'done';
+    if (!started) {
+      app.recording = false;
+      setRecordingUI(false, 'not started');
+    }
   } catch (err) {
+    app.recording = false;
+    setRecordingUI(false, 'failed');
     console.error(err);
     alert('Recording failed: ' + err.message);
-  } finally {
-    app.recording = false;
-    overlay.classList.add('hidden');
-    restartTake();
   }
 }
 app.startRecording = startRecording;
+
+function stopRecording() {
+  if (!app.recording) return;
+  setRecordingUI(true, 'saving...');
+  app.recorder.stop();
+}
+app.stopRecording = stopRecording;
+
+function toggleRecording() {
+  if (app.recording) stopRecording();
+  else startRecording();
+}
+app.toggleRecording = toggleRecording;
 
 // ---------- topbar ----------
 
@@ -470,8 +675,7 @@ function bindTopbar() {
     app.paused = !app.paused;
     pp.textContent = app.paused ? '▶ Play' : '⏸ Pause';
   };
-  document.getElementById('btn-record').onclick = startRecording;
-  document.getElementById('btn-cancel-record').onclick = () => app.recorder.cancel();
+  document.getElementById('btn-record').onclick = toggleRecording;
   document.getElementById('chk-log-live').onchange = (e) => { app.ui.logLive = e.target.checked; };
   // spacebar = tap (feels like tapping the board)
   window.addEventListener('keydown', (e) => {
