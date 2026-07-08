@@ -82,7 +82,7 @@ uniform vec3 uLightDir;      // screen space, +x right, +y DOWN, +z out
 uniform vec3 uLightColor;
 uniform vec3 uBaseColor;
 uniform sampler2D uCardboard;
-uniform vec2 uRes;
+uniform vec2 uScreen;        // canvas px (may differ from image px at 4K)
 uniform float uClipToCardboard;
 uniform float uLiftScale;
 
@@ -91,7 +91,7 @@ out vec4 fragColor;
 void main() {
   // cardboard alpha clip (filings never draw past the sheet edge / off table)
   if (uClipToCardboard > 0.5) {
-    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    vec2 uv = vec2(gl_FragCoord.x / uScreen.x, 1.0 - gl_FragCoord.y / uScreen.y);
     if (texture(uCardboard, uv).a < 0.5) discard;
   }
 
@@ -192,14 +192,14 @@ in vec2 vLocal;
 in vec2 vHalf;
 in float vSoft;
 uniform sampler2D uCardboard;
-uniform vec2 uRes;
+uniform vec2 uScreen;
 uniform float uClipToCardboard;
 uniform float uStrength;
 out vec4 fragColor;
 
 void main() {
   if (uClipToCardboard > 0.5) {
-    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    vec2 uv = vec2(gl_FragCoord.x / uScreen.x, 1.0 - gl_FragCoord.y / uScreen.y);
     if (texture(uCardboard, uv).a < 0.5) discard;
   }
   float lx = abs(vLocal.x) - vHalf.x;
@@ -282,7 +282,7 @@ in float vZ;
 uniform vec3 uLightColor;
 uniform vec3 uBaseColor;
 uniform sampler2D uCardboard;
-uniform vec2 uRes;
+uniform vec2 uScreen;
 uniform float uClipToCardboard;
 uniform float uLiftScale;
 uniform float uVisibility;
@@ -291,7 +291,7 @@ out vec4 fragColor;
 
 void main() {
   if (uClipToCardboard > 0.5) {
-    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    vec2 uv = vec2(gl_FragCoord.x / uScreen.x, 1.0 - gl_FragCoord.y / uScreen.y);
     if (texture(uCardboard, uv).a < 0.5) discard;
   }
 
@@ -327,13 +327,13 @@ export class FilingRenderer {
     this.count = 0;
     this.buildVAOs();
     this.u = uniformMap(gl, this.prog,
-      ['uH', 'uRes', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightDir', 'uLightColor',
+      ['uH', 'uRes', 'uScreen', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightDir', 'uLightColor',
        'uBaseColor', 'uCardboard', 'uClipToCardboard', 'uJitterPx', 'uLiftScale']);
     this.su = uniformMap(gl, this.shadowProg,
-      ['uH', 'uRes', 'uShadowDir', 'uKUp', 'uDetJHole', 'uCardboard',
+      ['uH', 'uRes', 'uScreen', 'uShadowDir', 'uKUp', 'uDetJHole', 'uCardboard',
        'uClipToCardboard', 'uStrength', 'uJitterPx', 'uLiftScale']);
     this.lu = uniformMap(gl, this.lineProg,
-      ['uH', 'uRes', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightColor',
+      ['uH', 'uRes', 'uScreen', 'uUpDir', 'uKUp', 'uDetJHole', 'uLightColor',
        'uBaseColor', 'uCardboard', 'uClipToCardboard', 'uJitterPx',
        'uLiftScale', 'uVisibility', 'uThickness']);
   }
@@ -393,6 +393,7 @@ export class FilingRenderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniformMatrix3fv(this.su.uH, false, o.H);
     gl.uniform2f(this.su.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.su.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.su.uShadowDir, o.shadowDir[0], o.shadowDir[1]);
     gl.uniform1f(this.su.uKUp, o.kUp);
     gl.uniform1f(this.su.uDetJHole, o.detJHole);
@@ -416,6 +417,7 @@ export class FilingRenderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniformMatrix3fv(this.u.uH, false, o.H);
     gl.uniform2f(this.u.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.u.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.u.uUpDir, o.upDir[0], o.upDir[1]);
     gl.uniform1f(this.u.uKUp, o.kUp);
     gl.uniform1f(this.u.uDetJHole, o.detJHole);
@@ -441,6 +443,7 @@ export class FilingRenderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniformMatrix3fv(this.lu.uH, false, o.H);
     gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.lu.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.lu.uUpDir, o.upDir[0], o.upDir[1]);
     gl.uniform1f(this.lu.uKUp, o.kUp);
     gl.uniform1f(this.lu.uDetJHole, o.detJHole);

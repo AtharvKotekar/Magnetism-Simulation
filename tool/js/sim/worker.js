@@ -337,37 +337,46 @@ class VisualEngine {
   }
 
   updateCoilTargets(impulse) {
+    // The loop's two legs pierce the board with opposite current, so the
+    // in-plane field is that of two antiparallel line currents. Field lines
+    // are the Apollonius circles of the two holes — level sets of
+    // u = ln(da/db) — circling each hole and straightening into the coil-axis
+    // line on the perpendicular bisector. Filings orient along H = rot90(∇u)
+    // and chain onto discrete u-bands.
     const st = this.st, p = this.p;
     const reach = this.currentReach();
     const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
     const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
     const poles = coilPoles(p);
     const ax = poles.ax, ay = poles.ay, bx = poles.bx, by = poles.by;
-    const dx = bx - ax, dy = by - ay;
-    const sep = Math.max(1e-6, Math.hypot(dx, dy));
-    const ux = dx / sep, uy = dy / sep;
-    const nx = -uy, ny = ux;
-    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
-    const half = sep * 0.5;
     const direction = p.currentDir < 0 ? -1 : 1;
     const friction = clamp01(p.visualFriction ?? 0.48);
     const slide = clamp01((1 - friction) * (p.slideAmount ?? 1.0));
     const slideGain = slide * clamp(0.28 + impulse * 0.70, 0.22, 0.95);
-    const ringSpacing = clamp((p.chainSpacing ?? 0.004) * (1.02 - 0.07 * currentScale), 0.0026, 0.010);
+    const spacing = p.chainSpacing ?? 0.0032;
+    // Constant step in u spaces the rings proportionally to hole distance,
+    // like the real crowding of filing rings near the wire.
+    const du = clamp(spacing / Math.max(1e-4, p.fieldReferenceR ?? 0.050), 0.02, 0.30) *
+      (1.03 - 0.08 * currentScale);
     const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+    const margin = p.sprinkleEdgeMargin ?? 0.004;
+    const snapCap = spacing * 3.5;
 
     for (let i = 0; i < st.n; i++) {
       if (st.stray[i]) continue;
       const x = st.baseX[i], y = st.baseY[i];
-      const relX = x - mx, relY = y - my;
-      const along = relX * ux + relY * uy;
-      const cross = relX * nx + relY * ny;
       const dax = x - ax, day = y - ay;
       const dbx = x - bx, dby = y - by;
       const da = Math.max(rim, Math.hypot(dax, day));
       const db = Math.max(rim, Math.hypot(dbx, dby));
-      const minD = Math.min(da, db);
-      const field = coilInfluence(x, y, currentAbs, reach, p, { ax, ay, bx, by, ux, uy, nx, ny, half, along, cross, minD });
+      const invA = 1 / (da * da);
+      const invB = 1 / (db * db);
+      // g = ∇ln(da/db); |g| = 2π|H|/I, so 1/|g| acts as an effective
+      // distance to the nearest leg (≈ sep/4 midway between the holes).
+      const gx = dax * invA - dbx * invB;
+      const gy = day * invA - dby * invB;
+      const gLen = Math.max(1e-9, Math.hypot(gx, gy));
+      const field = coilInfluence(gLen, currentAbs, reach, p);
       const desired = responseMask(field, p) * st.chainGain[i];
       st.fieldResponse[i] = field;
       if (desired <= 0.001) {
@@ -378,33 +387,35 @@ class VisualEngine {
         continue;
       }
 
-      const invA = 1 / (da * da);
-      const invB = 1 / (db * db);
-      let fx = (x - ax) * invA - (x - bx) * invB;
-      let fy = (y - ay) * invA - (y - by) * invB;
-      const fLen = Math.hypot(fx, fy) || 1;
-      fx /= fLen; fy /= fLen;
-      if (direction < 0) { fx = -fx; fy = -fy; }
-
-      const bridge = clamp01(1 - Math.abs(along) / Math.max(1e-4, half * 1.18));
-      const band = Math.round((cross + st.ringNoise[i] * ringSpacing * 0.24) / ringSpacing) * ringSpacing;
-      const maze = 0.74 + 0.26 * Math.sin(band * 580 + along * 43 + st.chainPhase[i]);
+      const gxn = gx / gLen, gyn = gy / gLen;
+      // H(dir = +1) = rot90(g): left leg carries current up out of the board.
+      const fx = gyn * direction, fy = -gxn * direction;
+      const u = Math.log(da / db);
+      const bandIdx = Math.round(u / du + st.ringNoise[i] * 0.30);
+      const nearB = u > 0;
+      const around = Math.atan2(nearB ? dby : day, nearB ? dbx : dax);
+      const maze = 0.74 + 0.26 * Math.sin(bandIdx * 1.93 + around * 7.0 + st.chainPhase[i]);
       const chain = clamp01(desired * (p.chainStrength ?? 1.0) * maze);
-      const crossNudge = (band - cross) * (p.dipoleBandCapture ?? 0.62) * chain * (0.55 + 0.45 * bridge) * slideGain;
-      const towardA = da <= db;
-      const nearX = towardA ? ax : bx;
-      const nearY = towardA ? ay : by;
-      const toPoleX = (nearX - x) / minD;
-      const toPoleY = (nearY - y) / minD;
+      // Newton step onto the band circle, along ∇u.
+      const toBand = clamp((bandIdx * du - u) / gLen, -snapCap, snapCap) *
+        (p.chainCapture ?? 0.85) * chain * (0.9 + 0.4 * slideGain);
+      const minD = Math.min(da, db);
       const inwardLimit = Math.max(0, minD - rim);
-      const inward = Math.min(inwardLimit, (p.inwardPull ?? 0.003) * currentScale * chain * impulse);
-      const drift = st.thetaDrift[i] * ringSpacing * 0.20 * chain * slideGain;
-      let tx = x + nx * crossNudge + toPoleX * inward + ux * drift;
-      let ty = y + ny * crossNudge + toPoleY * inward + uy * drift;
+      // Gradient attraction is only felt right next to a leg. A constant pull
+      // everywhere acts as a slow vacuum: its sign flips at the bisector, so
+      // over many taps the center strip drains from both sides (a visible
+      // bare gap between the conductors). Fade it out beyond ~4 cm.
+      const pullZone = clamp01(1 - minD / 0.045);
+      const inward = Math.min(inwardLimit,
+        (p.inwardPull ?? 0.003) * currentScale * chain * impulse) *
+        pullZone * pullZone * (nearB ? 1 : -1);
+      const drift = st.thetaDrift[i] * spacing * 0.9 * chain * slideGain;
+      let tx = x + gxn * (toBand + inward) + fx * drift;
+      let ty = y + gyn * (toBand + inward) + fy * drift;
       const pushed = pushOutOfNoGo(tx, ty, p, this.rng);
       if (pushed) { tx = pushed[0]; ty = pushed[1]; }
-      st.targetX[i] = clamp(tx, p.sprinkleEdgeMargin ?? 0.004, p.sheetW - (p.sprinkleEdgeMargin ?? 0.004));
-      st.targetY[i] = clamp(ty, p.sprinkleEdgeMargin ?? 0.004, p.sheetH - (p.sprinkleEdgeMargin ?? 0.004));
+      st.targetX[i] = clamp(tx, margin, p.sheetW - margin);
+      st.targetY[i] = clamp(ty, margin, p.sheetH - margin);
       st.targetAng[i] = Math.atan2(fy, fx) + st.angleNoise[i] * (0.42 - 0.34 * chain);
       st.targetAlign[i] = Math.max(st.targetAlign[i] * 0.985, clamp01(chain * impulse * (0.88 + 0.30 * slideGain)));
       if (chain * impulse > 0.025) st.state[i] = AWAKE;
@@ -716,22 +727,20 @@ function fieldInfluence(r, currentAbs, reach, p) {
   return clamp01(edge * Math.pow(invR, p.fieldFalloffPower ?? 1.1));
 }
 
-function coilInfluence(x, y, currentAbs, reach, p, g) {
+// Field response from the local two-wire field strength. gLen = |∇ln(da/db)|
+// is proportional to |H|, so 1/gLen behaves like distance to the nearest leg
+// (and ≈ sep/4 midway between the legs) — the straight-wire falloff shape
+// then applies directly to that effective radius.
+function coilInfluence(gLen, currentAbs, reach, p) {
   if (currentAbs <= 0.1) return 0;
   const inner = p.holeWallR + (p.rimClearance ?? 0.0004);
-  const minD = Math.max(inner, g.minD);
-  const edgeBand = Math.max(0.014, reach * 0.32);
-  const edge = smooth01((reach - minD) / edgeBand);
+  const rEff = Math.max(inner, 1 / Math.max(1e-9, gLen));
+  if (rEff >= reach) return 0;
+  const edgeBand = Math.max(0.012, reach * 0.34);
+  const edge = smooth01((reach - rEff) / edgeBand);
   const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
-  const invR = clamp((p.fieldReferenceR ?? 0.050) * currentScale / minD, 0, 1);
-  const nearPole = edge * Math.pow(invR, p.fieldFalloffPower ?? 1.15);
-  const bridgeWidth = Math.max(inner * 3.0, (p.chainSpacing ?? 0.003) * 4.8);
-  const between = smooth01(1 - Math.abs(g.along) / Math.max(1e-4, g.half * 1.16));
-  const bridge = Math.exp(-(g.cross * g.cross) / (2 * bridgeWidth * bridgeWidth)) *
-    between * clamp01(reach / Math.max(1e-4, g.half * 1.55)) * (p.dipoleBridge ?? 0.65);
-  const outer = Math.exp(-Math.max(0, minD - reach * 0.55) / Math.max(1e-4, reach * 0.42)) *
-    (p.dipoleReturn ?? 0.5) * 0.22;
-  return clamp01(nearPole + bridge + outer);
+  const invR = clamp((p.fieldReferenceR ?? 0.050) * currentScale / rEff, 0, 1);
+  return clamp01(edge * Math.pow(invR, p.fieldFalloffPower ?? 1.15));
 }
 
 function responseMask(field, p) {

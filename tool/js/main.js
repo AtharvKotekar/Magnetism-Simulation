@@ -7,7 +7,7 @@ import { FilingRenderer, FLOATS_PER } from './render/filings.js';
 import { Overlays } from './render/overlays.js?v=field-motion';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
 import { CalibrationUI } from './ui/calibration.js';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=field-motion';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=path-offset';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
 import { DEFAULT_UI } from './ui/defaults.js';
@@ -183,6 +183,9 @@ function rebuildFieldOverlay() {
       arrowSize: app.ui.fieldArrowSize,
       cometSpacing: app.ui.fieldMotionSpacing,
       cometHeadSize: app.ui.fieldCometHeadSize,
+      sheetW: app.cal.sheetW,
+      sheetH: app.cal.sheetH,
+      clipMargin: 0.0025,
     });
     return;
   }
@@ -208,6 +211,7 @@ function rebuildCurrentOverlay() {
     trackWidth: app.ui.currentTrackWidth,
     arrowSpacing: app.ui.currentArrowSpacing,
     arrowSize: app.ui.currentArrowSize,
+    pathOffset: [app.ui.currentPathOffsetX ?? 0, app.ui.currentPathOffsetY ?? 0],
     ...(app.variant.currentOverlay || {}),
   };
   if (typeof app.overlays.buildCurrentOverlay === 'function') {
@@ -223,7 +227,10 @@ function drawOpts(m, { alphaOnly = false, renderStyle = app.ui.renderStyle, shad
   const jitterPx = alphaOnly ? [0, 0] : tapJitterPx(m);
   return {
     H: app.glH,
-    res: [app.canvas.width, app.canvas.height],
+    // res = keyframe image px (all geometry lives in that space);
+    // screen = actual canvas backing px (differs when rendering at 4K).
+    res: [app.scene.W, app.scene.H],
+    screen: [app.canvas.width, app.canvas.height],
     upDir: app.upDir,
     kUp: app.kUp,
     detJHole: app.detJHole,
@@ -367,6 +374,7 @@ function drawFrame(m, {
   if (showInd) {
     const currentBase = {
       res: o.res,
+      screen: o.screen,
       time: m?.time ?? 0,
       dir: effectiveDir,
       cardboardTex: app.scene.cardboard.tex,
@@ -491,6 +499,27 @@ function pushRenderOptions() {
 }
 app.pushRenderOptions = pushRenderOptions;
 
+// True 4K rendering: resize the canvas backing store (keyframe aspect is
+// preserved, so nothing stretches — the scene, filings, and overlays are all
+// resolution-independent in image space). Recording at "native canvas"
+// then captures genuine 4K pixels.
+function setCanvasResolution(mode) {
+  app.ui.canvasRes = mode;
+  const W = app.scene?.W || app.canvas.width;
+  const H = app.scene?.H || app.canvas.height;
+  let w = W, h = H;
+  if (mode === '4k') {
+    w = 3840;
+    h = Math.round((H * 3840) / W / 2) * 2;
+  }
+  if (app.canvas.width !== w || app.canvas.height !== h) {
+    app.canvas.width = w;
+    app.canvas.height = h;
+    if (app.calUI?.active) app.calUI.position();
+  }
+}
+app.setCanvasResolution = setCanvasResolution;
+
 function sendCurrentState(log = true) {
   const p = app.params;
   const opts = app.ui.currentOn
@@ -567,9 +596,12 @@ function loadPreset(p) {
   if (p.cal) {
     Object.assign(app.cal, structuredClone(p.cal));
     saveCalibration(app.cal, app.variant.calibrationKey);
+    rebuildHomography();
+    if (app.calUI?.active) app.calUI.position();
   }
   app.ui.currentOn = p.ui?.currentOn ?? false;
   if (p.ui) Object.assign(app.ui, p.ui);
+  setCanvasResolution(app.ui.canvasRes ?? 'native');
   app.takeDuration = p.duration;
   rebuildFieldOverlay();
   rebuildCurrentOverlay();

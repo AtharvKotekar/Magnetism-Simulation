@@ -84,6 +84,14 @@ export function buildPanel(root, app) {
       app.ui.currentTrackWidth = v;
       app.rebuildCurrentOverlay();
     });
+    slider(b, 'Path offset X', -80, 80, 1, app.ui.currentPathOffsetX ?? 0, ' px', (v) => {
+      app.ui.currentPathOffsetX = v;
+      app.rebuildCurrentOverlay();
+    });
+    slider(b, 'Path offset Y', -80, 80, 1, app.ui.currentPathOffsetY ?? 0, ' px', (v) => {
+      app.ui.currentPathOffsetY = v;
+      app.rebuildCurrentOverlay();
+    });
     slider(b, 'Arrow spacing', 120, 700, 20, app.ui.currentArrowSpacing, ' px', (v) => {
       app.ui.currentArrowSpacing = v;
       app.rebuildCurrentOverlay();
@@ -358,12 +366,17 @@ export function buildPanel(root, app) {
     ], app.ui.recFormat, (v) => { app.ui.recFormat = v; });
     select(b, 'FPS', [['24', '24 (film)'], ['25', '25'], ['30', '30'], ['48', '48'], ['60', '60']],
       String(app.ui.recFps), (v) => { app.ui.recFps = +v; });
+    select(b, 'Canvas render', [
+      ['native', 'native 2752 × 1536'],
+      ['4k', 'true 4K 3840 × 2144'],
+    ], app.ui.canvasRes ?? 'native', (v) => { app.setCanvasResolution(v); });
     select(b, 'Resolution', [
       ['2k', '2K film 2048 × 1152'],
       ['1080p', '1080p film 1920 × 1080'],
-      ['native', 'native 2752 × 1536'],
+      ['native', 'native canvas size'],
       ['quick', 'quick 1280 × 720'],
     ], app.ui.recSize, (v) => { app.ui.recSize = v; });
+    hint(b, 'For true 4K takes set Canvas render to 4K and Resolution to native — the frame is rendered at 4K, never upscaled.');
     select(b, 'Quality', [
       ['ultra', 'Ultra film (160 Mbps)'],
       ['high', 'High (90 Mbps)'],

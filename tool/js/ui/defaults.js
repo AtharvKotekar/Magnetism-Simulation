@@ -23,6 +23,8 @@ export const DEFAULT_UI = {
   currentCometTail: 3.0,
   currentCometHeadSize: 0.80,
   currentTrackWidth: 12,
+  currentPathOffsetX: 0,
+  currentPathOffsetY: 0,
   currentArrowSpacing: 340,
   currentArrowSize: 1.0,
   currentArrowStrength: 0.75,

@@ -11,3 +11,6 @@ tool/take_*
 # Temporary local server/editor files.
 *.log
 *.tmp
+
+# Generated knowledge graph (rebuild with: graphify update .)
+graphify-out/

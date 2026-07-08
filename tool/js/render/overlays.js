@@ -100,13 +100,13 @@ uniform float uWidthFrac;    // 0..1 visible width inside the strip
 uniform float uMode;         // 0 = pulse, 1 = comet
 uniform vec3 uColor;
 uniform sampler2D uCardboard;
-uniform vec2 uRes;
+uniform vec2 uScreen;        // canvas px (may differ from image px at 4K)
 out vec4 fragColor;
 void main() {
   if (uIntensity < 0.003) discard;
   // hide the under-cardboard stretch where the sheet covers it
   if (vUnder > 0.5) {
-    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    vec2 uv = vec2(gl_FragCoord.x / uScreen.x, 1.0 - gl_FragCoord.y / uScreen.y);
     if (texture(uCardboard, uv).a > 0.5) discard;
   }
   float spacing = max(24.0, uSpacing);
@@ -255,12 +255,12 @@ const CURRENT_ARROW_FS = `#version 300 es
 precision highp float;
 in float vUnder;
 uniform sampler2D uCardboard;
-uniform vec2 uRes;
+uniform vec2 uScreen;
 uniform vec4 uColor;
 out vec4 fragColor;
 void main() {
   if (vUnder > 0.5) {
-    vec2 uv = vec2(gl_FragCoord.x / uRes.x, 1.0 - gl_FragCoord.y / uRes.y);
+    vec2 uv = vec2(gl_FragCoord.x / uScreen.x, 1.0 - gl_FragCoord.y / uScreen.y);
     if (texture(uCardboard, uv).a > 0.5) discard;
   }
   fragColor = vec4(uColor.rgb * uColor.a, uColor.a);
@@ -277,7 +277,7 @@ export class Overlays {
     this.currentArrowProg = compileProgram(gl, CURRENT_ARROW_VS, CURRENT_ARROW_FS);
     this.du = {};
     for (const n of [
-      'uRes', 'uJitterPx', 'uTime', 'uSpeed', 'uIntensity', 'uSpacing',
+      'uRes', 'uScreen', 'uJitterPx', 'uTime', 'uSpeed', 'uIntensity', 'uSpacing',
       'uTail', 'uPulseWidth', 'uWidthFrac', 'uMode', 'uColor', 'uCardboard',
     ])
       this.du[n] = gl.getUniformLocation(this.dashProg, n);
@@ -313,6 +313,7 @@ export class Overlays {
     };
     this.cau = {
       uRes: gl.getUniformLocation(this.currentArrowProg, 'uRes'),
+      uScreen: gl.getUniformLocation(this.currentArrowProg, 'uScreen'),
       uJitterPx: gl.getUniformLocation(this.currentArrowProg, 'uJitterPx'),
       uDirSign: gl.getUniformLocation(this.currentArrowProg, 'uDirSign'),
       uColor: gl.getUniformLocation(this.currentArrowProg, 'uColor'),
@@ -342,6 +343,10 @@ export class Overlays {
 
   buildCurrentOverlay(opts = {}) {
     this.currentLine = opts.path ? buildPolylineFromPoints(opts.path) : buildWirePolyline();
+    const [offX, offY] = opts.pathOffset ?? [0, 0];
+    if (offX || offY) {
+      this.currentLine = this.currentLine.map((p) => ({ ...p, x: p.x + offX, y: p.y + offY }));
+    }
     this.buildDashGeometry(opts.trackWidth ?? 12.0);
     this.buildCurrentArrowGeometry({
       spacing: opts.arrowSpacing ?? 340,
@@ -426,6 +431,7 @@ export class Overlays {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform2f(this.du.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.du.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.du.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform1f(this.du.uTime, o.time);
     gl.uniform1f(this.du.uSpeed, 420.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1));
@@ -453,6 +459,7 @@ export class Overlays {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform2f(this.cau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.cau.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.cau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform1f(this.cau.uDirSign, o.dir < 0 ? 1 : -1);
     const c = o.color || [1.0, 0.9, 0.35];
@@ -504,6 +511,7 @@ export class Overlays {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform2f(this.cau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.cau.uScreen, o.screen?.[0] ?? o.res[0], o.screen?.[1] ?? o.res[1]);
     gl.uniform2f(this.cau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform1f(this.cau.uDirSign, o.dir < 0 ? 1 : -1);
     const c = o.color || [1.0, 0.9, 0.35];
@@ -646,16 +654,22 @@ export class Overlays {
     gl.bindVertexArray(null);
   }
 
+  // Coil variant: the loop's legs pierce the board with opposite current, so
+  // the in-plane field lines are the Apollonius circles of the two holes
+  // (level sets of ln(da/db)) plus the straight coil-axis line on the
+  // perpendicular bisector. Circles never cross, crowd toward the holes, and
+  // are clipped to the cardboard rectangle. Polylines are wound so increasing
+  // arc runs along H(dir = -1); the dash shader moves comets toward
+  // decreasing arc for dir = +1, which then follows H(dir = +1).
   buildCoilFieldLines(poleA, poleB, rMax, opts = {}) {
     const gl = this.gl;
     const verts = [];
     const dashVerts = [];
     const arrowVerts = [];
     const nLines = Math.max(2, Math.round(opts.rings ?? 12));
-    const seg = Math.max(32, Math.round(opts.segments ?? 96));
+    const perSide = Math.max(1, Math.round(nLines / 2));
     const firstRadius = Math.max(0.0008, opts.firstRadius ?? 0.008);
-    const radiusMultiplier = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
-    const falloffCurve = Math.max(0.45, opts.falloffCurve ?? 1);
+    const gapRatio = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
     const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
     const thickness = Math.max(0.15, opts.thickness ?? 1);
     const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
@@ -669,50 +683,90 @@ export class Overlays {
     const ax = poleA[0], ay = poleA[1];
     const bx = poleB[0], by = poleB[1];
     const dx = bx - ax, dy = by - ay;
-    const d = Math.max(1e-6, Math.hypot(dx, dy));
-    const ux = dx / d, uy = dy / d;
-    const nx = -uy, ny = ux;
-    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
-    const half = d * 0.5;
+    const sep = Math.max(1e-6, Math.hypot(dx, dy));
+    const ux = dx / sep, uy = dy / sep;
+    const sheetW = opts.sheetW ?? Infinity;
+    const sheetH = opts.sheetH ?? Infinity;
+    const clipMargin = opts.clipMargin ?? 0.002;
+    const inside = (px, py) => {
+      if (px < clipMargin || py < clipMargin ||
+          px > sheetW - clipMargin || py > sheetH - clipMargin) return false;
+      const ra = Math.hypot(px - ax, py - ay);
+      const rb = Math.hypot(px - bx, py - by);
+      return Math.min(ra, rb) <= rMax;
+    };
+    // H direction for dir = -1 at a point (the winding reference).
+    const windRef = (px, py) => {
+      const dax = px - ax, day = py - ay, dbx = px - bx, dby = py - by;
+      const ia = 1 / Math.max(1e-9, dax * dax + day * day);
+      const ib = 1 / Math.max(1e-9, dbx * dbx + dby * dby);
+      return [-(day * ia - dby * ib), dax * ia - dbx * ib];
+    };
     const lines = [];
+    const addClipped = (pts) => {
+      let run = [];
+      const flush = () => {
+        if (run.length > 2) lines.push(arcLengthPlane(run, pxToM));
+        run = [];
+      };
+      for (const p of pts) {
+        if (inside(p.x, p.y)) run.push(p); else flush();
+      }
+      flush();
+    };
     const local = [
       [arrowLen * 0.70, 0],
       [-arrowLen * 0.55, -arrowWid],
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    for (let k = 0; k < nLines; k++) {
-      const exponent = Math.pow(k, falloffCurve);
-      const off = Math.min(rMax, firstRadius * Math.pow(radiusMultiplier, exponent));
-      for (const sign of [-1, 1]) {
-        const bridge = [];
-        for (let s = 0; s <= seg; s++) {
-          const t = s / seg;
-          const a = -1 + t * 2;
-          const arch = off * (0.40 + 1.15 * Math.sin(Math.PI * t));
-          bridge.push({
-            x: mx + ux * (a * half) + nx * sign * arch,
-            y: my + uy * (a * half) + ny * sign * arch,
-          });
+    // Circle closest-approach distances along AB crowd toward the holes with
+    // ratio gapRatio between consecutive gaps; the last circle hugs the
+    // perpendicular bisector and reads as a near-straight center line.
+    const xMax = sep * 0.47;
+    const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
+    for (let k = 0; k < perSide; k++) {
+      const frac = perSide === 1 ? 0
+        : denom > 1e-6 ? (Math.pow(gapRatio, k) - 1) / denom : k / (perSide - 1);
+      const near = Math.min(xMax, firstRadius + (xMax - firstRadius) * frac);
+      const lam = Math.min(0.93, Math.max(0.001, near / Math.max(1e-6, sep - near)));
+      const R = lam * sep / (1 - lam * lam);
+      const centerOff = lam * lam * sep / (1 - lam * lam);
+      const nSeg = Math.min(4096, Math.max(72, Math.ceil((Math.PI * 2 * R) / Math.max(0.0015, pxToM * 8))));
+      for (const side of [0, 1]) {
+        const cx = side === 0 ? ax - ux * centerOff : bx + ux * centerOff;
+        const cy = side === 0 ? ay - uy * centerOff : by + uy * centerOff;
+        const pts = [];
+        for (let s = 0; s <= nSeg; s++) {
+          const a = (s / nSeg) * Math.PI * 2;
+          pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
         }
-        lines.push(arcLengthPlane(bridge, pxToM));
-
-        if (k > 0) {
-          const outer = [];
-          const outerOff = Math.min(rMax * 1.25, off * 1.55 + d * 0.30);
-          for (let s = 0; s <= seg; s++) {
-            const t = s / seg;
-            const a = 1 - t * 2;
-            const arch = outerOff * (0.62 + 0.55 * Math.sin(Math.PI * t));
-            outer.push({
-              x: mx + ux * (a * (half + off * 0.22)) + nx * sign * arch,
-              y: my + uy * (a * (half + off * 0.22)) + ny * sign * arch,
-            });
-          }
-          lines.push(arcLengthPlane(outer, pxToM));
-        }
+        // Compare the CCW tangent at the circle's crossing point on the AB
+        // segment (distance `near` from its own hole) with the field there.
+        const probe = side === 0
+          ? { x: ax + ux * near, y: ay + uy * near }
+          : { x: bx - ux * near, y: by - uy * near };
+        const pr = Math.max(1e-9, Math.hypot(probe.x - cx, probe.y - cy));
+        const tan = [-(probe.y - cy) / pr, (probe.x - cx) / pr];
+        const ref = windRef(probe.x, probe.y);
+        if (tan[0] * ref[0] + tan[1] * ref[1] < 0) pts.reverse();
+        addClipped(pts);
       }
     }
+
+    // The coil-axis line (the u = 0 level set), clipped like everything else.
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const nx = -uy, ny = ux;
+    const axisReach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
+    const axisSeg = 256;
+    const axisPts = [];
+    for (let s = 0; s <= axisSeg; s++) {
+      const t = -axisReach + (2 * axisReach * s) / axisSeg;
+      axisPts.push({ x: mx + nx * t, y: my + ny * t });
+    }
+    const axisRef = windRef(mx, my);
+    if (nx * axisRef[0] + ny * axisRef[1] < 0) axisPts.reverse();
+    addClipped(axisPts);
 
     for (const line of lines) {
       pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
@@ -857,7 +911,9 @@ export class Overlays {
     if (!lines?.length) return;
     const gl = this.gl;
     const spacing = Math.max(30, o.spacing ?? 170);
-    const speedPx = 180.0 * (o.speed ?? 1) * (o.dir < 0 ? -1 : 1);
+    // Same sign convention as the dash shader in drawFieldDashes, so the
+    // head triangles travel with their comet tails.
+    const speedPx = 180.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1);
     const size = Math.max(0.25, o.cometHeadSize ?? 0.75);
     const pxToM = this.fieldPxToM || 1e-4;
     const len = Math.max(0.0012, pxToM * 20) * size;
@@ -902,7 +958,9 @@ export class Overlays {
     gl.uniformMatrix3fv(this.fvau.uH, false, o.H);
     gl.uniform2f(this.fvau.uRes, o.res[0], o.res[1]);
     gl.uniform2f(this.fvau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
-    gl.uniform1f(this.fvau.uDirSign, o.dir < 0 ? -1 : 1);
+    // Polylines are wound along H(dir = -1); flip the heads for dir = +1 so
+    // they point the way the dashes travel.
+    gl.uniform1f(this.fvau.uDirSign, o.dir < 0 ? 1 : -1);
     const c = o.color || [0.55, 0.85, 1.0];
     const intensity = Math.max(0, o.intensity ?? 1);
     gl.uniform4f(this.fvau.uColor, c[0], c[1], c[2], Math.min(0.90, alphaScale * intensity));

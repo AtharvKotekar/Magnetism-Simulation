@@ -15,9 +15,12 @@ const COIL_UI = {
   fieldArrowColor: '#f8f5ec',
   fieldLineStrength: 2.2,
   fieldMaxRadiusPx: 1520,
-  fieldFirstRadiusPx: 34,
-  fieldRadiusMultiplier: 1.32,
-  fieldLineCount: 14,
+  fieldFirstRadiusPx: 64,   // just outside the 10.5 mm hole rim (~58 px)
+  // Near-even crossing spacing along the loop diameter (gap ratio ~1) with
+  // 11 circles per side + the axis line: the interior of the loop reads as a
+  // dense parallel bundle, like the reference footage.
+  fieldRadiusMultiplier: 1.08,
+  fieldLineCount: 22,
   fieldLineThickness: 1.45,
   fieldMotionThickness: 0.65,
   boardShake: 0.72,
@@ -45,20 +48,24 @@ const STRAIGHT_VARIANT = {
   },
 };
 
+// Measured from the coil keyframe: corners fitted to the cardboard alpha
+// edges (image1), holes from the dark blobs in image0, arch apex from the
+// occluder alpha (image2). wireHeight ≈ loop radius (half the 0.236 m hole
+// separation) so tap lift projects with a realistic vertical scale.
 const COIL_CALIBRATION = {
   corners: {
-    tl: [210, 330],
-    tr: [2380, 332],
-    br: [2695, 1490],
-    bl: [128, 1482],
+    tl: [438, 227],
+    tr: [2486, 231],
+    br: [2749, 1428],   // bottom corners sit on the top-surface front edge
+    bl: [120, 1399],    // (the darker board front face starts below it)
   },
-  hole: [1408, 740],
-  coilLeft: [795, 742],
-  coilRight: [2016, 742],
-  wireTop: [1408, 390],
+  hole: [1464, 741],
+  coilLeft: [857, 742],
+  coilRight: [2071, 741],
+  wireTop: [1448, 337],
   sheetW: 0.40,
   sheetH: 0.22,
-  wireHeight: 0.30,
+  wireHeight: 0.118,
   holeWallR: 0.0105,
 };
 
@@ -78,13 +85,16 @@ export const COIL_PRESETS = [
       currentDir: 1,
       currentAutoAlign: false,
       currentMotion: 0.58,
-      fieldReach30A: 0.080,
+      // Reach covers the whole board (far corner rEff ≈ 0.145 m) so there is
+      // no dead zone: the real demo shows chains everywhere, strongest near
+      // the legs and along the center lines through the loop.
+      fieldReach30A: 0.150,
       fieldReferenceR: 0.050,
-      fieldFalloffPower: 1.18,
-      fieldMinResponse: 0.008,
+      fieldFalloffPower: 1.05,
+      fieldMinResponse: 0.004,
       chainSpacing: 0.0032,
-      chainStrength: 0.42,
-      chainCapture: 0.82,
+      chainStrength: 0.55,
+      chainCapture: 0.90,
       inwardPull: 0.0028,
       visualFriction: 0.32,
       slideAmount: 0.82,
@@ -99,9 +109,6 @@ export const COIL_PRESETS = [
       sprinkleR: 0.190,
       sprinklePattern: 'sheet',
       sprinkleClump: 0.18,
-      dipoleBridge: 0.72,
-      dipoleReturn: 0.54,
-      dipoleBandCapture: 0.64,
     },
     timeline: [
       { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.190, clump: 0.18 },
@@ -157,9 +164,19 @@ const COIL_VARIANT = {
   defaultCalibration: COIL_CALIBRATION,
   fieldOverlay: 'coil',
   currentOverlay: {
+    // Arch centerline ray-traced from the occluder alpha (image2), anchored
+    // at the measured holes. Ordered right hole → arch → left hole: the dash
+    // shader moves marks toward decreasing arc for dir = +1, so dir = +1
+    // flows left-to-right over the arch, matching the direction label below.
+    // Nudge live with the Path offset X/Y sliders in the Conductor Overlay
+    // panel if the keyframe ever shifts.
     path: [
-      [788, 747], [800, 665], [856, 535], [1008, 430],
-      [1215, 386], [1430, 390], [1640, 448], [1880, 580], [2018, 746],
+      [2071, 741], [2048, 643], [2013, 583], [1967, 533], [1914, 492],
+      [1859, 459], [1805, 434], [1753, 414], [1704, 398], [1657, 386],
+      [1611, 376], [1567, 370], [1523, 367], [1480, 364], [1438, 363],
+      [1394, 364], [1350, 369], [1304, 374], [1257, 382], [1207, 394],
+      [1155, 410], [1101, 431], [1045, 458], [989, 494], [935, 538],
+      [890, 593], [861, 656], [857, 742],
     ],
   },
   currentDirectionText(dir) {
@@ -167,6 +184,16 @@ const COIL_VARIANT = {
   },
   params: {
     fieldModel: 'coilDipole',
+    // Coil response tuning (see 'Manual coil stage' for the rationale) —
+    // applied at boot so every preset inherits it.
+    fieldReach30A: 0.150,
+    fieldReferenceR: 0.050,
+    fieldFalloffPower: 1.05,
+    fieldMinResponse: 0.004,
+    chainSpacing: 0.0032,
+    chainStrength: 0.55,
+    chainCapture: 0.90,
+    inwardPull: 0.0028,
   },
   presets: COIL_PRESETS,
 };

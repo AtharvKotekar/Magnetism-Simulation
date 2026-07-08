@@ -18,7 +18,10 @@ export class CalibrationUI {
     this.calibrationKey = calibrationKey;
     this.active = false;
     this.pins = new Map();
-    for (const [key, label] of PIN_DEFS) {
+    const defs = [...PIN_DEFS];
+    if (cal.coilLeft) defs.push(['coilLeft', 'coil hole L']);
+    if (cal.coilRight) defs.push(['coilRight', 'coil hole R']);
+    for (const [key, label] of defs) {
       const el = document.createElement('div');
       el.className = 'pin';
       el.dataset.label = label;
@@ -31,9 +34,8 @@ export class CalibrationUI {
   }
 
   getPoint(key) {
-    if (key === 'hole') return this.cal.hole;
-    if (key === 'wireTop') return this.cal.wireTop;
-    return this.cal.corners[key];
+    if (this.cal.corners[key]) return this.cal.corners[key];
+    return this.cal[key];
   }
 
   setActive(on) {
@@ -78,9 +80,8 @@ export class CalibrationUI {
         const pt = this.clientToImage(ev.clientX, ev.clientY);
         pt[0] = Math.max(0, Math.min(this.canvas.width, pt[0]));
         pt[1] = Math.max(0, Math.min(this.canvas.height, pt[1]));
-        if (key === 'hole') this.cal.hole = pt;
-        else if (key === 'wireTop') this.cal.wireTop = pt;
-        else this.cal.corners[key] = pt;
+        if (this.cal.corners[key]) this.cal.corners[key] = pt;
+        else this.cal[key] = pt;
         this.position();
         this.onChange(this.cal);
       };

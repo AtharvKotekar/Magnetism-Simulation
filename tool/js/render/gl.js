@@ -39,7 +39,18 @@ function compile(gl, type, src) {
 export async function loadTexture(gl, url, { flipY = false } = {}) {
   const img = new Image();
   img.src = url;
-  await img.decode();
+  await new Promise((res, rej) => {
+    if (img.complete && img.naturalWidth) return res();
+    img.onload = res;
+    img.onerror = () => rej(new Error('failed to load ' + url));
+  });
+  // decode() is only a jank optimization — texImage2D decodes on upload
+  // anyway — and Chrome defers decode work indefinitely in occluded tabs,
+  // which would hang boot when the page loads in a background tab.
+  await Promise.race([
+    img.decode().catch(() => {}),
+    new Promise((res) => setTimeout(res, 300)),
+  ]);
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipY);
