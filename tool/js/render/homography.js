@@ -111,14 +111,27 @@ export const DEFAULT_CALIBRATION = {
 
 const LS_KEY = 'magnetism-stage-calibration-v1';
 
-export function loadCalibration() {
+export function loadCalibration(key = 'straight', defaults = DEFAULT_CALIBRATION) {
+  const storageKey = key === 'straight' ? LS_KEY : `${LS_KEY}-${key}`;
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return { ...DEFAULT_CALIBRATION, ...JSON.parse(raw) };
+    const raw = localStorage.getItem(storageKey);
+    if (raw) return mergeCalibration(defaults, JSON.parse(raw));
   } catch (_) { /* fall through */ }
-  return structuredClone(DEFAULT_CALIBRATION);
+  return structuredClone(defaults);
 }
 
-export function saveCalibration(cal) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(cal)); } catch (_) { /* ignore */ }
+export function saveCalibration(cal, key = 'straight') {
+  const storageKey = key === 'straight' ? LS_KEY : `${LS_KEY}-${key}`;
+  try { localStorage.setItem(storageKey, JSON.stringify(cal)); } catch (_) { /* ignore */ }
+}
+
+function mergeCalibration(defaults, saved) {
+  return {
+    ...structuredClone(defaults),
+    ...saved,
+    corners: {
+      ...structuredClone(defaults.corners),
+      ...(saved?.corners || {}),
+    },
+  };
 }

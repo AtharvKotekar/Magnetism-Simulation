@@ -23,6 +23,7 @@ export const DEFAULT_PARAMS = {
   holeY: 0.15,
   holeWallR: 0.0115,      // filings cannot enter this radius (hole rim)
   wireR: 0.002,           // wire radius, regularizes B near r=0
+  fieldModel: 'wire',     // 'wire' | 'coilDipole'
 
   // --- current ---
   currentA: 30,           // amplitude, A

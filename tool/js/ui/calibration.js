@@ -10,11 +10,12 @@ const PIN_DEFS = [
 ];
 
 export class CalibrationUI {
-  constructor(canvas, layer, cal, onChange) {
+  constructor(canvas, layer, cal, onChange, calibrationKey = 'straight') {
     this.canvas = canvas;
     this.layer = layer;
     this.cal = cal;
     this.onChange = onChange;
+    this.calibrationKey = calibrationKey;
     this.active = false;
     this.pins = new Map();
     for (const [key, label] of PIN_DEFS) {
@@ -87,7 +88,7 @@ export class CalibrationUI {
         el.classList.remove('dragging');
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
-        saveCalibration(this.cal);
+        saveCalibration(this.cal, this.calibrationKey);
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);

@@ -132,7 +132,10 @@ class VisualEngine {
     if ('acFreq' in patch) this.current.freq = patch.acFreq;
     if ('autoTapRate' in patch) this.scheduleAutoTap();
     if ('filingMedianL' in patch) this.rescaleFilings(oldMedian);
-    if ('holeWallR' in patch || 'holeX' in patch || 'holeY' in patch) this.enforceHoleWall();
+    if ('holeWallR' in patch || 'holeX' in patch || 'holeY' in patch ||
+        'poleAX' in patch || 'poleAY' in patch || 'poleBX' in patch || 'poleBY' in patch) {
+      this.enforceHoleWall();
+    }
   }
 
   rescaleFilings(oldMedian) {
@@ -148,18 +151,13 @@ class VisualEngine {
 
   enforceHoleWall() {
     const st = this.st, p = this.p;
-    const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
     for (let i = 0; i < st.n; i++) {
       if (st.stray[i]) continue;
-      const dx = st.baseX[i] - p.holeX;
-      const dy = st.baseY[i] - p.holeY;
-      const r = Math.hypot(dx, dy);
-      if (r >= rim) continue;
-      const a = r > 1e-6 ? Math.atan2(dy, dx) : this.rng.range(0, PI2);
-      const x = p.holeX + Math.cos(a) * rim;
-      const y = p.holeY + Math.sin(a) * rim;
-      st.baseX[i] = st.px[i] = st.targetX[i] = x;
-      st.baseY[i] = st.py[i] = st.targetY[i] = y;
+      let x = st.baseX[i], y = st.baseY[i];
+      const moved = pushOutOfNoGo(x, y, p, this.rng);
+      if (!moved) continue;
+      st.baseX[i] = st.px[i] = st.targetX[i] = moved[0];
+      st.baseY[i] = st.py[i] = st.targetY[i] = moved[1];
       st.pz[i] = 0;
     }
   }
@@ -196,8 +194,7 @@ class VisualEngine {
       const [x, y] = sampleGradientPoint(rng, pattern, p, radius, placed, count, centerBias, attempts);
       attempts++;
       if (!insideSheet(x, y, p, edgeMargin)) continue;
-      const dx = x - p.holeX, dy = y - p.holeY;
-      if (dx * dx + dy * dy < p.holeWallR * p.holeWallR) continue;
+      if (insideNoGo(x, y, p)) continue;
       st.spawn(rng, p, placed++, x, y);
     }
     const responsivePlaced = placed;
@@ -206,8 +203,7 @@ class VisualEngine {
       attempts++;
       const [x, y] = sampleStrayPoint(rng, p, placed - responsivePlaced, strayCount, attempts);
       if (!insideSheet(x, y, p, edgeMargin)) continue;
-      const dx = x - p.holeX, dy = y - p.holeY;
-      if (dx * dx + dy * dy < p.holeWallR * p.holeWallR) continue;
+      if (insideNoGo(x, y, p)) continue;
       st.spawn(rng, p, placed++, x, y, true);
     }
     st.n = placed;
@@ -285,6 +281,10 @@ class VisualEngine {
   }
 
   updateTargets(impulse) {
+    if (this.p.fieldModel === 'coilDipole') {
+      this.updateCoilTargets(impulse);
+      return;
+    }
     const st = this.st, p = this.p;
     const reach = this.currentReach();
     const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
@@ -332,6 +332,81 @@ class VisualEngine {
       st.targetAng[i] = theta + direction * Math.PI / 2 +
         st.angleNoise[i] * (0.46 - 0.40 * chain);
       st.targetAlign[i] = Math.max(st.targetAlign[i] * 0.985, clamp01(chain * impulse * (0.90 + 0.35 * slideGain)));
+      if (chain * impulse > 0.025) st.state[i] = AWAKE;
+    }
+  }
+
+  updateCoilTargets(impulse) {
+    const st = this.st, p = this.p;
+    const reach = this.currentReach();
+    const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
+    const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
+    const poles = coilPoles(p);
+    const ax = poles.ax, ay = poles.ay, bx = poles.bx, by = poles.by;
+    const dx = bx - ax, dy = by - ay;
+    const sep = Math.max(1e-6, Math.hypot(dx, dy));
+    const ux = dx / sep, uy = dy / sep;
+    const nx = -uy, ny = ux;
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const half = sep * 0.5;
+    const direction = p.currentDir < 0 ? -1 : 1;
+    const friction = clamp01(p.visualFriction ?? 0.48);
+    const slide = clamp01((1 - friction) * (p.slideAmount ?? 1.0));
+    const slideGain = slide * clamp(0.28 + impulse * 0.70, 0.22, 0.95);
+    const ringSpacing = clamp((p.chainSpacing ?? 0.004) * (1.02 - 0.07 * currentScale), 0.0026, 0.010);
+    const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+
+    for (let i = 0; i < st.n; i++) {
+      if (st.stray[i]) continue;
+      const x = st.baseX[i], y = st.baseY[i];
+      const relX = x - mx, relY = y - my;
+      const along = relX * ux + relY * uy;
+      const cross = relX * nx + relY * ny;
+      const dax = x - ax, day = y - ay;
+      const dbx = x - bx, dby = y - by;
+      const da = Math.max(rim, Math.hypot(dax, day));
+      const db = Math.max(rim, Math.hypot(dbx, dby));
+      const minD = Math.min(da, db);
+      const field = coilInfluence(x, y, currentAbs, reach, p, { ax, ay, bx, by, ux, uy, nx, ny, half, along, cross, minD });
+      const desired = responseMask(field, p) * st.chainGain[i];
+      st.fieldResponse[i] = field;
+      if (desired <= 0.001) {
+        st.targetX[i] = st.baseX[i];
+        st.targetY[i] = st.baseY[i];
+        st.targetAng[i] = st.ang[i];
+        st.targetAlign[i] *= 0.92;
+        continue;
+      }
+
+      const invA = 1 / (da * da);
+      const invB = 1 / (db * db);
+      let fx = (x - ax) * invA - (x - bx) * invB;
+      let fy = (y - ay) * invA - (y - by) * invB;
+      const fLen = Math.hypot(fx, fy) || 1;
+      fx /= fLen; fy /= fLen;
+      if (direction < 0) { fx = -fx; fy = -fy; }
+
+      const bridge = clamp01(1 - Math.abs(along) / Math.max(1e-4, half * 1.18));
+      const band = Math.round((cross + st.ringNoise[i] * ringSpacing * 0.24) / ringSpacing) * ringSpacing;
+      const maze = 0.74 + 0.26 * Math.sin(band * 580 + along * 43 + st.chainPhase[i]);
+      const chain = clamp01(desired * (p.chainStrength ?? 1.0) * maze);
+      const crossNudge = (band - cross) * (p.dipoleBandCapture ?? 0.62) * chain * (0.55 + 0.45 * bridge) * slideGain;
+      const towardA = da <= db;
+      const nearX = towardA ? ax : bx;
+      const nearY = towardA ? ay : by;
+      const toPoleX = (nearX - x) / minD;
+      const toPoleY = (nearY - y) / minD;
+      const inwardLimit = Math.max(0, minD - rim);
+      const inward = Math.min(inwardLimit, (p.inwardPull ?? 0.003) * currentScale * chain * impulse);
+      const drift = st.thetaDrift[i] * ringSpacing * 0.20 * chain * slideGain;
+      let tx = x + nx * crossNudge + toPoleX * inward + ux * drift;
+      let ty = y + ny * crossNudge + toPoleY * inward + uy * drift;
+      const pushed = pushOutOfNoGo(tx, ty, p, this.rng);
+      if (pushed) { tx = pushed[0]; ty = pushed[1]; }
+      st.targetX[i] = clamp(tx, p.sprinkleEdgeMargin ?? 0.004, p.sheetW - (p.sprinkleEdgeMargin ?? 0.004));
+      st.targetY[i] = clamp(ty, p.sprinkleEdgeMargin ?? 0.004, p.sheetH - (p.sprinkleEdgeMargin ?? 0.004));
+      st.targetAng[i] = Math.atan2(fy, fx) + st.angleNoise[i] * (0.42 - 0.34 * chain);
+      st.targetAlign[i] = Math.max(st.targetAlign[i] * 0.985, clamp01(chain * impulse * (0.88 + 0.30 * slideGain)));
       if (chain * impulse > 0.025) st.state[i] = AWAKE;
     }
   }
@@ -510,6 +585,9 @@ class VisualState {
 }
 
 function sampleGradientPoint(rng, pattern, p, R, i, n, centerBias, attempts = 0) {
+  if (p.fieldModel === 'coilDipole' && pattern === 'sheet') {
+    return sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts);
+  }
   const margin = p.sprinkleEdgeMargin ?? 0.004;
   const angleJitter = pattern === 'sheet' ? 0.045 : 0.09;
   const a = (i + attempts * 0.37) * GOLDEN_ANGLE + rng.range(-angleJitter, angleJitter);
@@ -532,6 +610,26 @@ function sampleGradientPoint(rng, pattern, p, R, i, n, centerBias, attempts = 0)
   const exponent = 0.52 + 0.50 * centerBias;
   const r = minR + (outer - minR) * Math.pow(u, exponent);
   return [p.holeX + r * Math.cos(a), p.holeY + r * Math.sin(a)];
+}
+
+function sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts = 0) {
+  const m = p.sprinkleEdgeMargin ?? 0.004;
+  const cols = Math.ceil(Math.sqrt(Math.max(1, n) * p.sheetW / p.sheetH));
+  const rows = Math.ceil(Math.max(1, n) / cols);
+  const j = i + attempts * 11;
+  const cx = j % cols, cy = Math.floor(j / cols) % rows;
+  let x = m + (cx + 0.5 + rng.range(-0.46, 0.46)) / cols * (p.sheetW - 2 * m);
+  let y = m + (cy + 0.5 + rng.range(-0.46, 0.46)) / rows * (p.sheetH - 2 * m);
+  const bias = clamp01(centerBias) * rng.f() * rng.f() * 0.34;
+  if (bias > 0.0001) {
+    const { ax, ay, bx, by } = coilPoles(p);
+    const towardA = rng.f() < 0.5;
+    const tx = towardA ? ax : bx;
+    const ty = towardA ? ay : by;
+    x = lerp(x, tx, bias);
+    y = lerp(y, ty, bias);
+  }
+  return [x, y];
 }
 
 function sampleStrayPoint(rng, p, i, n, attempts) {
@@ -565,6 +663,49 @@ function insideSheet(x, y, p, margin) {
   return x >= margin && y >= margin && x <= p.sheetW - margin && y <= p.sheetH - margin;
 }
 
+function coilPoles(p) {
+  const sep = Math.max(0.04, p.sheetW * 0.46);
+  const ax = Number.isFinite(p.poleAX) ? p.poleAX : (p.holeX - sep * 0.5);
+  const ay = Number.isFinite(p.poleAY) ? p.poleAY : p.holeY;
+  const bx = Number.isFinite(p.poleBX) ? p.poleBX : (p.holeX + sep * 0.5);
+  const by = Number.isFinite(p.poleBY) ? p.poleBY : p.holeY;
+  return { ax, ay, bx, by };
+}
+
+function insideNoGo(x, y, p) {
+  const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+  if (p.fieldModel === 'coilDipole') {
+    const { ax, ay, bx, by } = coilPoles(p);
+    const da2 = (x - ax) * (x - ax) + (y - ay) * (y - ay);
+    const db2 = (x - bx) * (x - bx) + (y - by) * (y - by);
+    return da2 < rim * rim || db2 < rim * rim;
+  }
+  const dx = x - p.holeX, dy = y - p.holeY;
+  return dx * dx + dy * dy < rim * rim;
+}
+
+function pushOutOfNoGo(x, y, p, rng) {
+  const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+  const centers = p.fieldModel === 'coilDipole'
+    ? (() => {
+        const { ax, ay, bx, by } = coilPoles(p);
+        return [[ax, ay], [bx, by]];
+      })()
+    : [[p.holeX, p.holeY]];
+  let moved = false;
+  let ox = x, oy = y;
+  for (const [cx, cy] of centers) {
+    const dx = ox - cx, dy = oy - cy;
+    const r = Math.hypot(dx, dy);
+    if (r >= rim) continue;
+    const a = r > 1e-6 ? Math.atan2(dy, dx) : rng.range(0, PI2);
+    ox = cx + Math.cos(a) * rim;
+    oy = cy + Math.sin(a) * rim;
+    moved = true;
+  }
+  return moved ? [ox, oy] : null;
+}
+
 function fieldInfluence(r, currentAbs, reach, p) {
   if (currentAbs <= 0.1 || r >= reach) return 0;
   const inner = p.holeWallR + (p.rimClearance ?? 0.0004);
@@ -573,6 +714,24 @@ function fieldInfluence(r, currentAbs, reach, p) {
   const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
   const invR = clamp((p.fieldReferenceR ?? 0.058) * currentScale / Math.max(inner, r), 0, 1);
   return clamp01(edge * Math.pow(invR, p.fieldFalloffPower ?? 1.1));
+}
+
+function coilInfluence(x, y, currentAbs, reach, p, g) {
+  if (currentAbs <= 0.1) return 0;
+  const inner = p.holeWallR + (p.rimClearance ?? 0.0004);
+  const minD = Math.max(inner, g.minD);
+  const edgeBand = Math.max(0.014, reach * 0.32);
+  const edge = smooth01((reach - minD) / edgeBand);
+  const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
+  const invR = clamp((p.fieldReferenceR ?? 0.050) * currentScale / minD, 0, 1);
+  const nearPole = edge * Math.pow(invR, p.fieldFalloffPower ?? 1.15);
+  const bridgeWidth = Math.max(inner * 3.0, (p.chainSpacing ?? 0.003) * 4.8);
+  const between = smooth01(1 - Math.abs(g.along) / Math.max(1e-4, g.half * 1.16));
+  const bridge = Math.exp(-(g.cross * g.cross) / (2 * bridgeWidth * bridgeWidth)) *
+    between * clamp01(reach / Math.max(1e-4, g.half * 1.55)) * (p.dipoleBridge ?? 0.65);
+  const outer = Math.exp(-Math.max(0, minD - reach * 0.55) / Math.max(1e-4, reach * 0.42)) *
+    (p.dipoleReturn ?? 0.5) * 0.22;
+  return clamp01(nearPole + bridge + outer);
 }
 
 function responseMask(field, p) {

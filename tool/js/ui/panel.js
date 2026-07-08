@@ -1,8 +1,6 @@
 // Control panel: builds all parameter sections and wires them to app actions.
 // `app` is the orchestrator from main.js (owns params, worker, renderer, ui prefs).
 
-import { PRESETS } from './presets.js';
-
 export function buildPanel(root, app) {
   root.innerHTML = '';
   const S = (title, open = true) => section(root, title, open);
@@ -40,9 +38,13 @@ export function buildPanel(root, app) {
     dirRow.className = 'ctl-row';
     const dirBtn = document.createElement('button');
     const updateDirText = () => {
-      dirBtn.textContent = app.params.currentDir < 0
-        ? '⬇ current flows DOWN through hole'
-        : '⬆ current flows UP through hole';
+      if (app.variant?.currentDirectionText) {
+        dirBtn.textContent = app.variant.currentDirectionText(app.params.currentDir);
+      } else {
+        dirBtn.textContent = app.params.currentDir < 0
+          ? '⬇ current flows DOWN through hole'
+          : '⬆ current flows UP through hole';
+      }
     };
     updateDirText();
     dirBtn.onclick = () => {
@@ -334,7 +336,7 @@ export function buildPanel(root, app) {
   // ---------- PRESET TAKES ----------
   {
     const b = S('PRESET TAKES');
-    for (const p of PRESETS) {
+    for (const p of app.presets || []) {
       const row = document.createElement('div');
       row.className = 'ctl-row';
       const btn = document.createElement('button');

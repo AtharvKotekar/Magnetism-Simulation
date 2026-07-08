@@ -51,6 +51,23 @@ export function buildWirePolyline(holeY = 790) {
   return out;
 }
 
+function buildPolylineFromPoints(points = []) {
+  const clean = points.map((p) => ({
+    x: p[0],
+    y: p[1],
+    under: p[2] ?? 0,
+  })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (clean.length < 2) return buildWirePolyline();
+  let s = 0;
+  const out = [{ x: clean[0].x, y: clean[0].y, s: 0, under: clean[0].under }];
+  for (let i = 1; i < clean.length; i++) {
+    const a = clean[i - 1], b = clean[i];
+    s += Math.hypot(b.x - a.x, b.y - a.y);
+    out.push({ x: b.x, y: b.y, s, under: b.under });
+  }
+  return out;
+}
+
 const DASH_VS = `#version 300 es
 layout(location=0) in vec2 aPos;      // image px
 layout(location=1) in float aArc;     // arc length px
@@ -198,6 +215,24 @@ void main() {
   gl_Position = vec4(ndc, 0.0, 1.0);
 }`;
 
+const FIELD_VECTOR_ARROW_VS = `#version 300 es
+layout(location=0) in vec2 aCenter;   // plane meters
+layout(location=1) in vec2 aTangent;  // plane direction
+layout(location=2) in vec2 aLocal;    // local arrow coordinates, meters
+uniform mat3 uH;
+uniform vec2 uRes;
+uniform vec2 uJitterPx;
+uniform float uDirSign;
+void main() {
+  vec2 t = normalize(aTangent);
+  vec2 n = vec2(-t.y, t.x);
+  vec2 p = aCenter + t * (aLocal.x * uDirSign) + n * aLocal.y;
+  vec3 q = uH * vec3(p, 1.0);
+  vec2 px = q.xy / q.z + uJitterPx;
+  vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
 const CURRENT_ARROW_VS = `#version 300 es
 layout(location=0) in vec2 aCenter;   // image px
 layout(location=1) in vec2 aTangent;  // increasing-arc tangent in image px
@@ -238,6 +273,7 @@ export class Overlays {
     this.linesProg = compileProgram(gl, LINES_VS, LINES_FS);
     this.fieldDashProg = compileProgram(gl, FIELD_DASH_VS, FIELD_DASH_FS);
     this.fieldArrowProg = compileProgram(gl, FIELD_ARROW_VS, LINES_FS);
+    this.fieldVectorArrowProg = compileProgram(gl, FIELD_VECTOR_ARROW_VS, LINES_FS);
     this.currentArrowProg = compileProgram(gl, CURRENT_ARROW_VS, CURRENT_ARROW_FS);
     this.du = {};
     for (const n of [
@@ -268,6 +304,13 @@ export class Overlays {
       uDirSign: gl.getUniformLocation(this.fieldArrowProg, 'uDirSign'),
       uColor: gl.getUniformLocation(this.fieldArrowProg, 'uColor'),
     };
+    this.fvau = {
+      uH: gl.getUniformLocation(this.fieldVectorArrowProg, 'uH'),
+      uRes: gl.getUniformLocation(this.fieldVectorArrowProg, 'uRes'),
+      uJitterPx: gl.getUniformLocation(this.fieldVectorArrowProg, 'uJitterPx'),
+      uDirSign: gl.getUniformLocation(this.fieldVectorArrowProg, 'uDirSign'),
+      uColor: gl.getUniformLocation(this.fieldVectorArrowProg, 'uColor'),
+    };
     this.cau = {
       uRes: gl.getUniformLocation(this.currentArrowProg, 'uRes'),
       uJitterPx: gl.getUniformLocation(this.currentArrowProg, 'uJitterPx'),
@@ -287,11 +330,18 @@ export class Overlays {
     this.fieldArrowCount = 0;
     this.fieldCometHeadVAO = null;
     this.fieldCometHeadCount = 0;
+    this.fieldVectorArrowVAO = null;
+    this.fieldVectorArrowBuf = null;
+    this.fieldVectorArrowCount = 0;
+    this.fieldVectorCometHeadVAO = null;
+    this.fieldVectorCometHeadBuf = null;
+    this.fieldVectorCometHeadCount = 0;
+    this.fieldVectorLines = null;
     this.fieldPxToM = 1e-4;
   }
 
   buildCurrentOverlay(opts = {}) {
-    this.currentLine = buildWirePolyline();
+    this.currentLine = opts.path ? buildPolylineFromPoints(opts.path) : buildWirePolyline();
     this.buildDashGeometry(opts.trackWidth ?? 12.0);
     this.buildCurrentArrowGeometry({
       spacing: opts.arrowSpacing ?? 340,
@@ -474,6 +524,9 @@ export class Overlays {
     const dashVerts = [];
     const arrowVerts = [];
     const cometHeadVerts = [];
+    this.fieldVectorLines = null;
+    this.fieldVectorArrowCount = 0;
+    this.fieldVectorCometHeadCount = 0;
     const nRings = Math.max(1, Math.round(opts.rings ?? 6));
     const seg = Math.max(36, Math.round(opts.segments ?? 112));
     const firstRadius = Math.max(0.0001, opts.firstRadius ?? (rMax / Math.max(1, nRings)));
@@ -593,6 +646,124 @@ export class Overlays {
     gl.bindVertexArray(null);
   }
 
+  buildCoilFieldLines(poleA, poleB, rMax, opts = {}) {
+    const gl = this.gl;
+    const verts = [];
+    const dashVerts = [];
+    const arrowVerts = [];
+    const nLines = Math.max(2, Math.round(opts.rings ?? 12));
+    const seg = Math.max(32, Math.round(opts.segments ?? 96));
+    const firstRadius = Math.max(0.0008, opts.firstRadius ?? 0.008);
+    const radiusMultiplier = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
+    const falloffCurve = Math.max(0.45, opts.falloffCurve ?? 1);
+    const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
+    const thickness = Math.max(0.15, opts.thickness ?? 1);
+    const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
+    const arrowSize = Math.max(0.25, opts.arrowSize ?? 1);
+    const bandHalfWidth = Math.max(0.00006, pxToM * 1.55) * thickness;
+    const arrowSpacing = Math.max(32, 250 / Math.max(0.25, arrowDensity));
+    const arrowLen = Math.max(0.0015, pxToM * 24) * arrowSize;
+    const arrowWid = arrowLen * 0.46;
+    this.fieldPxToM = pxToM;
+
+    const ax = poleA[0], ay = poleA[1];
+    const bx = poleB[0], by = poleB[1];
+    const dx = bx - ax, dy = by - ay;
+    const d = Math.max(1e-6, Math.hypot(dx, dy));
+    const ux = dx / d, uy = dy / d;
+    const nx = -uy, ny = ux;
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const half = d * 0.5;
+    const lines = [];
+    const local = [
+      [arrowLen * 0.70, 0],
+      [-arrowLen * 0.55, -arrowWid],
+      [-arrowLen * 0.55, arrowWid],
+    ];
+
+    for (let k = 0; k < nLines; k++) {
+      const exponent = Math.pow(k, falloffCurve);
+      const off = Math.min(rMax, firstRadius * Math.pow(radiusMultiplier, exponent));
+      for (const sign of [-1, 1]) {
+        const bridge = [];
+        for (let s = 0; s <= seg; s++) {
+          const t = s / seg;
+          const a = -1 + t * 2;
+          const arch = off * (0.40 + 1.15 * Math.sin(Math.PI * t));
+          bridge.push({
+            x: mx + ux * (a * half) + nx * sign * arch,
+            y: my + uy * (a * half) + ny * sign * arch,
+          });
+        }
+        lines.push(arcLengthPlane(bridge, pxToM));
+
+        if (k > 0) {
+          const outer = [];
+          const outerOff = Math.min(rMax * 1.25, off * 1.55 + d * 0.30);
+          for (let s = 0; s <= seg; s++) {
+            const t = s / seg;
+            const a = 1 - t * 2;
+            const arch = outerOff * (0.62 + 0.55 * Math.sin(Math.PI * t));
+            outer.push({
+              x: mx + ux * (a * (half + off * 0.22)) + nx * sign * arch,
+              y: my + uy * (a * (half + off * 0.22)) + ny * sign * arch,
+            });
+          }
+          lines.push(arcLengthPlane(outer, pxToM));
+        }
+      }
+    }
+
+    for (const line of lines) {
+      pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
+      if (arrowDensity > 0 && line.length > 1) {
+        const total = line[line.length - 1].s;
+        for (let s = arrowSpacing * 0.7; s < total - arrowSpacing * 0.35; s += arrowSpacing) {
+          const p = samplePlanePolyline(line, s);
+          if (!p) continue;
+          for (const l of local) arrowVerts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+        }
+      }
+    }
+
+    this.fieldVectorLines = lines;
+    this.fieldCount = verts.length / 2;
+    if (!this.fieldVAO) this.fieldVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldVAO);
+    if (!this.fieldBuf) this.fieldBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    this.fieldDashCount = dashVerts.length / 4;
+    if (!this.fieldDashVAO) this.fieldDashVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldDashVAO);
+    if (!this.fieldDashBuf) this.fieldDashBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldDashBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dashVerts), gl.STATIC_DRAW);
+    const dashStride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, dashStride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, dashStride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, dashStride, 12);
+    gl.bindVertexArray(null);
+
+    this.fieldArrowCount = 0;
+    this.fieldCometHeadCount = 0;
+    this.fieldVectorArrowCount = arrowVerts.length / 6;
+    if (!this.fieldVectorArrowVAO) this.fieldVectorArrowVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldVectorArrowVAO);
+    if (!this.fieldVectorArrowBuf) this.fieldVectorArrowBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldVectorArrowBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrowVerts), gl.STATIC_DRAW);
+    const stride = 24;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.bindVertexArray(null);
+  }
+
   // Reprojection grid for calibration mode: 2 cm grid over the sheet plane.
   buildGrid(sheetW, sheetH, step = 0.02) {
     const gl = this.gl;
@@ -666,11 +837,77 @@ export class Overlays {
   }
 
   drawFieldArrows(o) {
+    if (this.fieldVectorArrowCount) {
+      this.drawFieldVectorArrowSet(this.fieldVectorArrowVAO, this.fieldVectorArrowCount, o, 0.32);
+      return;
+    }
     this.drawFieldArrowSet(this.fieldArrowVAO, this.fieldArrowCount, o, 0.32, 180.0 * (o.speed ?? 0));
   }
 
   drawFieldCometHeads(o) {
+    if (this.fieldVectorLines) {
+      this.drawFieldVectorCometHeads(o);
+      return;
+    }
     this.drawFieldArrowSet(this.fieldCometHeadVAO, this.fieldCometHeadCount, o, 0.46, 180.0 * (o.speed ?? 1));
+  }
+
+  drawFieldVectorCometHeads(o) {
+    const lines = this.fieldVectorLines;
+    if (!lines?.length) return;
+    const gl = this.gl;
+    const spacing = Math.max(30, o.spacing ?? 170);
+    const speedPx = 180.0 * (o.speed ?? 1) * (o.dir < 0 ? -1 : 1);
+    const size = Math.max(0.25, o.cometHeadSize ?? 0.75);
+    const pxToM = this.fieldPxToM || 1e-4;
+    const len = Math.max(0.0012, pxToM * 20) * size;
+    const wid = len * 0.46;
+    const local = [
+      [len * 0.72, 0],
+      [-len * 0.56, -wid],
+      [-len * 0.56, wid],
+    ];
+    const verts = [];
+    const start = positiveMod((o.time ?? 0) * speedPx, spacing);
+    for (const line of lines) {
+      const total = line[line.length - 1]?.s ?? 0;
+      for (let s = start; s < total; s += spacing) {
+        const p = samplePlanePolyline(line, s);
+        if (!p) continue;
+        for (const l of local) verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+      }
+    }
+    if (!verts.length) return;
+    this.fieldVectorCometHeadCount = verts.length / 6;
+    if (!this.fieldVectorCometHeadVAO) this.fieldVectorCometHeadVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldVectorCometHeadVAO);
+    if (!this.fieldVectorCometHeadBuf) this.fieldVectorCometHeadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldVectorCometHeadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+    const stride = 24;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.bindVertexArray(null);
+    this.drawFieldVectorArrowSet(this.fieldVectorCometHeadVAO, this.fieldVectorCometHeadCount, o, 0.46);
+  }
+
+  drawFieldVectorArrowSet(vao, count, o, alphaScale) {
+    if (!count || !vao) return;
+    const gl = this.gl;
+    gl.useProgram(this.fieldVectorArrowProg);
+    gl.bindVertexArray(vao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix3fv(this.fvau.uH, false, o.H);
+    gl.uniform2f(this.fvau.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.fvau.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform1f(this.fvau.uDirSign, o.dir < 0 ? -1 : 1);
+    const c = o.color || [0.55, 0.85, 1.0];
+    const intensity = Math.max(0, o.intensity ?? 1);
+    gl.uniform4f(this.fvau.uColor, c[0], c[1], c[2], Math.min(0.90, alphaScale * intensity));
+    gl.drawArrays(gl.TRIANGLES, 0, count);
+    gl.bindVertexArray(null);
   }
 
   drawFieldArrowSet(vao, count, o, alphaScale, speedPx) {
@@ -711,6 +948,59 @@ function samplePolyline(line, targetS) {
       tx,
       ty,
       under: a.under > 0.5 || b.under > 0.5 ? 1 : 0,
+    };
+  }
+  return null;
+}
+
+function arcLengthPlane(points, pxToM) {
+  if (!points.length) return points;
+  let s = 0;
+  const out = [{ x: points[0].x, y: points[0].y, s: 0 }];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    s += Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1e-6, pxToM);
+    out.push({ x: b.x, y: b.y, s });
+  }
+  return out;
+}
+
+function pushThickPlaneLine(line, halfWidth, verts, dashVerts) {
+  for (let i = 0; i < line.length - 1; i++) {
+    const a = line[i], b = line[i + 1];
+    let tx = b.x - a.x, ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1;
+    tx /= len; ty /= len;
+    const nx = -ty * halfWidth, ny = tx * halfWidth;
+    const p00 = [a.x - nx, a.y - ny];
+    const p10 = [a.x + nx, a.y + ny];
+    const p01 = [b.x - nx, b.y - ny];
+    const p11 = [b.x + nx, b.y + ny];
+    verts.push(
+      p00[0], p00[1], p10[0], p10[1], p11[0], p11[1],
+      p00[0], p00[1], p11[0], p11[1], p01[0], p01[1],
+    );
+    dashVerts.push(
+      p00[0], p00[1], a.s, -1, p10[0], p10[1], a.s, 1, p11[0], p11[1], b.s, 1,
+      p00[0], p00[1], a.s, -1, p11[0], p11[1], b.s, 1, p01[0], p01[1], b.s, -1,
+    );
+  }
+}
+
+function samplePlanePolyline(line, targetS) {
+  for (let i = 0; i < line.length - 1; i++) {
+    const a = line[i], b = line[i + 1];
+    if (targetS < a.s || targetS > b.s) continue;
+    const span = Math.max(1e-6, b.s - a.s);
+    const t = (targetS - a.s) / span;
+    let tx = b.x - a.x, ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1;
+    tx /= len; ty /= len;
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      tx,
+      ty,
     };
   }
   return null;

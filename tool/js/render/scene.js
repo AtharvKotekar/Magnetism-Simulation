@@ -33,8 +33,10 @@ void main() {
 export const OCCLUDER_RECT = [1243.998, 313.0, 3016 * 0.5, 1198 * 0.5];
 
 export class SceneLayers {
-  constructor(gl) {
+  constructor(gl, opts = {}) {
     this.gl = gl;
+    this.assetsBase = opts.assetsBase || 'assets/';
+    this.occluderRect = opts.occluderRect || OCCLUDER_RECT;
     this.prog = compileProgram(gl, VS, FS);
     this.vao = unitQuadVAO(gl);
     this.uRect = gl.getUniformLocation(this.prog, 'uRect');
@@ -52,9 +54,9 @@ export class SceneLayers {
   async load() {
     const gl = this.gl;
     [this.scene, this.cardboard, this.occluder] = await Promise.all([
-      loadTexture(gl, 'assets/image0.png'),
-      loadTexture(gl, 'assets/image1.png'),
-      loadTexture(gl, 'assets/image2.png'),
+      loadTexture(gl, `${this.assetsBase}image0.png`),
+      loadTexture(gl, `${this.assetsBase}image1.png`),
+      loadTexture(gl, `${this.assetsBase}image2.png`),
     ]);
     this.W = this.scene.width;
     this.H = this.scene.height;
@@ -86,7 +88,7 @@ export class SceneLayers {
     const gl = this.gl;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    this.drawQuad(this.occluder.tex, OCCLUDER_RECT);
+    this.drawQuad(this.occluder.tex, this.occluderRect);
   }
 
   // For the filings-only alpha pass: punch the occluder's silhouette OUT of
@@ -96,7 +98,7 @@ export class SceneLayers {
     const gl = this.gl;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
-    this.drawQuad(this.occluder.tex, OCCLUDER_RECT);
+    this.drawQuad(this.occluder.tex, this.occluderRect);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 }

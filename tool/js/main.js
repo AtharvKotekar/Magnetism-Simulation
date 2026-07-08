@@ -13,10 +13,15 @@ import { PRESETS } from './ui/presets.js';
 import { DEFAULT_UI } from './ui/defaults.js';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
+import { buildVariantConfig } from './variant.js';
+
+const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
 const app = {
-  params: { ...DEFAULT_PARAMS },
-  cal: loadCalibration(),
+  variant,
+  presets: variant.presets || PRESETS,
+  params: { ...DEFAULT_PARAMS, ...(variant.params || {}) },
+  cal: loadCalibration(variant.calibrationKey, variant.defaultCalibration),
   timeline: [],
   takeDuration: 9,
   takeHash: '—',
@@ -32,10 +37,12 @@ window.app = app; // console access for debugging
 
 async function boot() {
   app.canvas = document.getElementById('gl-canvas');
+  const brand = document.getElementById('brand');
+  if (brand && app.variant.brandHTML) brand.innerHTML = app.variant.brandHTML;
   const gl = createGL(app.canvas);
   app.gl = gl;
 
-  app.scene = new SceneLayers(gl);
+  app.scene = new SceneLayers(gl, app.variant.scene);
   await app.scene.load();
   app.filings = new FilingRenderer(gl, app.params.maxParticles);
   app.overlays = new Overlays(gl);
@@ -54,12 +61,12 @@ async function boot() {
   buildPanel(document.getElementById('panel'), app);
   app.timelineUI = new TimelineUI(app);
   app.calUI = new CalibrationUI(app.canvas, document.getElementById('pin-layer'), app.cal,
-    () => calibrationChanged(false));
+    () => calibrationChanged(false), app.variant.calibrationKey);
   app.recorder = new Recorder(app);
   bindTopbar();
 
   // default take
-  loadPreset(PRESETS[0]);
+  loadPreset(app.presets[0]);
 
   requestAnimationFrame(tick);
 }
@@ -142,6 +149,13 @@ function rebuildHomography() {
   // hole position in plane coords (physics origin for the wire)
   const hp = app.homog.toPlane(c.hole[0], c.hole[1]);
   app.holePlane = hp;
+  if (c.coilLeft && c.coilRight) {
+    app.coilLeftPlane = app.homog.toPlane(c.coilLeft[0], c.coilLeft[1]);
+    app.coilRightPlane = app.homog.toPlane(c.coilRight[0], c.coilRight[1]);
+  } else {
+    app.coilLeftPlane = null;
+    app.coilRightPlane = null;
+  }
   // vertical scale: px per meter of height at the hole
   const dx = c.wireTop[0] - c.hole[0], dy = c.wireTop[1] - c.hole[1];
   const wireLenPx = Math.hypot(dx, dy) || 1;
@@ -156,6 +170,22 @@ function rebuildFieldOverlay() {
   const pxPerM = Math.sqrt(Math.max(1e-9, Math.abs(app.detJHole || 1)));
   const pxToM = 1 / pxPerM;
   const rMax = Math.max(4, app.ui.fieldMaxRadiusPx ?? 1450) * pxToM;
+  if (app.variant.fieldOverlay === 'coil' && app.coilLeftPlane && app.coilRightPlane) {
+    app.overlays.buildCoilFieldLines(app.coilLeftPlane, app.coilRightPlane, rMax, {
+      rings: app.ui.fieldLineCount,
+      firstRadius: Math.max(1, app.ui.fieldFirstRadiusPx ?? 52) * pxToM,
+      radiusMultiplier: app.ui.fieldRadiusMultiplier,
+      falloffCurve: app.ui.fieldFalloffCurve,
+      pxToM,
+      thickness: app.ui.fieldLineThickness,
+      segments: app.ui.fieldLineDetail,
+      arrowDensity: app.ui.fieldArrowDensity,
+      arrowSize: app.ui.fieldArrowSize,
+      cometSpacing: app.ui.fieldMotionSpacing,
+      cometHeadSize: app.ui.fieldCometHeadSize,
+    });
+    return;
+  }
   app.overlays.buildFieldLines(app.holePlane[0], app.holePlane[1], rMax, {
     rings: app.ui.fieldLineCount,
     firstRadius: Math.max(1, app.ui.fieldFirstRadiusPx ?? 52) * pxToM,
@@ -178,6 +208,7 @@ function rebuildCurrentOverlay() {
     trackWidth: app.ui.currentTrackWidth,
     arrowSpacing: app.ui.currentArrowSpacing,
     arrowSize: app.ui.currentArrowSize,
+    ...(app.variant.currentOverlay || {}),
   };
   if (typeof app.overlays.buildCurrentOverlay === 'function') {
     app.overlays.buildCurrentOverlay(opts);
@@ -315,6 +346,8 @@ function drawFrame(m, {
         color: hexToRgb(app.ui.fieldMotionColor),
         intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
         speed: app.ui.fieldMotionSpeed,
+        spacing: app.ui.fieldMotionSpacing,
+        cometHeadSize: app.ui.fieldCometHeadSize,
       });
     }
     if (app.ui.showFieldArrows) {
@@ -431,7 +464,7 @@ function hexToRgb(hex) {
 // ---------- worker actions (live + take control) ----------
 
 function simParams() {
-  return {
+  const params = {
     ...app.params,
     holeX: app.holePlane[0],
     holeY: app.holePlane[1],
@@ -439,6 +472,15 @@ function simParams() {
     sheetH: app.cal.sheetH,
     holeWallR: app.cal.holeWallR,
   };
+  if (app.variant.fieldOverlay === 'coil' && app.coilLeftPlane && app.coilRightPlane) {
+    params.poleAX = app.coilLeftPlane[0];
+    params.poleAY = app.coilLeftPlane[1];
+    params.poleBX = app.coilRightPlane[0];
+    params.poleBY = app.coilRightPlane[1];
+    params.holeX = (params.poleAX + params.poleBX) * 0.5;
+    params.holeY = (params.poleAY + params.poleBY) * 0.5;
+  }
+  return params;
 }
 
 app.pushParams = (patch) => app.worker.postMessage({ type: 'params', patch });
@@ -523,8 +565,8 @@ function loadPreset(p) {
   app.timeline = structuredClone(p.timeline);
   if (p.params) Object.assign(app.params, p.params);
   if (p.cal) {
-    Object.assign(app.cal, p.cal);
-    saveCalibration(app.cal);
+    Object.assign(app.cal, structuredClone(p.cal));
+    saveCalibration(app.cal, app.variant.calibrationKey);
   }
   app.ui.currentOn = p.ui?.currentOn ?? false;
   if (p.ui) Object.assign(app.ui, p.ui);
@@ -569,10 +611,16 @@ app.refreshTakeHash = refreshTakeHash;
 
 function calibrationChanged(rebuildPanelToo = true) {
   rebuildHomography();
-  saveCalibration(app.cal);
+  saveCalibration(app.cal, app.variant.calibrationKey);
   app.overlays.buildGrid(app.cal.sheetW, app.cal.sheetH);
   app.pushParams({
     holeX: app.holePlane[0], holeY: app.holePlane[1],
+    ...(app.coilLeftPlane && app.coilRightPlane ? {
+      poleAX: app.coilLeftPlane[0], poleAY: app.coilLeftPlane[1],
+      poleBX: app.coilRightPlane[0], poleBY: app.coilRightPlane[1],
+      holeX: (app.coilLeftPlane[0] + app.coilRightPlane[0]) * 0.5,
+      holeY: (app.coilLeftPlane[1] + app.coilRightPlane[1]) * 0.5,
+    } : {}),
     sheetW: app.cal.sheetW, sheetH: app.cal.sheetH, holeWallR: app.cal.holeWallR,
   });
   refreshTakeHash();
