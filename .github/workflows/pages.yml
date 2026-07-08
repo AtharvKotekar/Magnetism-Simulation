@@ -1,8 +1,10 @@
 name: Deploy GitHub Pages
 
+# This repo deploys via branch-based GitHub Pages (Settings → Pages →
+# "Deploy from a branch": main). This Actions workflow only works if Pages
+# is switched to "GitHub Actions" mode, so it is manual-only — otherwise it
+# fails on every push while the branch deploy does the real work.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
