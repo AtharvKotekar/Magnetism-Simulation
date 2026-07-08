@@ -111,7 +111,10 @@ void main() {
   }
   float spacing = max(24.0, uSpacing);
   float phase = fract((vArc - uTime * uSpeed) / spacing);
-  float comet = pow(max(0.0, 1.0 - phase), max(0.35, uTail));
+  // The tail must trail the motion: marks travel toward -arc when
+  // uSpeed < 0 and toward +arc when uSpeed > 0.
+  float trail = uSpeed > 0.0 ? phase : 1.0 - phase;
+  float comet = pow(max(0.0, trail), max(0.35, uTail));
   float pulseD = min(phase, 1.0 - phase);
   float pulseW = clamp(uPulseWidth, 0.015, 0.35);
   float pulse = exp(-(pulseD * pulseD) / (2.0 * pulseW * pulseW));
@@ -178,7 +181,10 @@ void main() {
   if (uIntensity < 0.003) discard;
   float spacing = max(12.0, uSpacing);
   float phase = fract((vArc - uTime * uSpeed) / spacing);
-  float comet = pow(max(0.0, 1.0 - phase), max(0.35, uTail));
+  // The tail must trail the motion: marks travel toward -arc when
+  // uSpeed < 0 and toward +arc when uSpeed > 0.
+  float trail = uSpeed > 0.0 ? phase : 1.0 - phase;
+  float comet = pow(max(0.0, trail), max(0.35, uTail));
   float pulseD = min(phase, 1.0 - phase);
   float pulseW = clamp(uPulseWidth, 0.012, 0.35);
   float pulse = exp(-(pulseD * pulseD) / (2.0 * pulseW * pulseW));
