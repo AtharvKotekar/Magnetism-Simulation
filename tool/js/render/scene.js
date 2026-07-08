@@ -36,6 +36,9 @@ export class SceneLayers {
   constructor(gl, opts = {}) {
     this.gl = gl;
     this.assetsBase = opts.assetsBase || 'assets/';
+    // Optional alternate keyframe shown while the current runs the other
+    // way (e.g. the coil scene with the cell physically flipped).
+    this.reverseBase = opts.reverseBase || null;
     this.occluderRect = opts.occluderRect || OCCLUDER_RECT;
     this.prog = compileProgram(gl, VS, FS);
     this.vao = unitQuadVAO(gl);
@@ -58,6 +61,14 @@ export class SceneLayers {
       loadTexture(gl, `${this.assetsBase}image1.png`),
       loadTexture(gl, `${this.assetsBase}image2.png`),
     ]);
+    this.sceneReverse = null;
+    if (this.reverseBase) {
+      try {
+        this.sceneReverse = await loadTexture(gl, this.reverseBase);
+      } catch {
+        this.sceneReverse = null;   // optional — fall back to the base keyframe
+      }
+    }
     this.W = this.scene.width;
     this.H = this.scene.height;
   }
@@ -77,10 +88,11 @@ export class SceneLayers {
     gl.bindVertexArray(null);
   }
 
-  drawScene() {
+  drawScene(reverse = false) {
     const gl = this.gl;
+    const tex = reverse && this.sceneReverse ? this.sceneReverse.tex : this.scene.tex;
     gl.disable(gl.BLEND);
-    this.drawQuad(this.scene.tex, [0, 0, this.W, this.H]);
+    this.drawQuad(tex, [0, 0, this.W, this.H]);
     gl.enable(gl.BLEND);
   }
 

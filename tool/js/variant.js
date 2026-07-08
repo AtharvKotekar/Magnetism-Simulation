@@ -160,6 +160,10 @@ const COIL_VARIANT = {
   brandHTML: 'MAGNETISM <span>COIL</span>',
   scene: {
     assetsBase: 'assets/',
+    // Keyframe with the cell physically flipped, shown while the current
+    // runs right-to-left (dir = -1). image0.png (+ terminal wired for
+    // left-to-right flow) stays the dir = +1 keyframe.
+    reverseBase: 'assets/image0-rev.png',
     occluderRect: [0, 0, 2752, 1536],
   },
   calibrationKey: 'coil',

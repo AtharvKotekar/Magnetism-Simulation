@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v3';
-import { SceneLayers } from './render/scene.js?v=coil-v3';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v3';
-import { Overlays } from './render/overlays.js?v=coil-v3';
+import { createGL } from './render/gl.js?v=coil-v4';
+import { SceneLayers } from './render/scene.js?v=coil-v4';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v4';
+import { Overlays } from './render/overlays.js?v=coil-v4';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v3';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v3';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v4';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v4';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v3';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v4';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v3';
+import { buildVariantConfig } from './variant.js?v=coil-v4';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v3', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v4', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -296,16 +296,20 @@ function drawFrame(m, {
     return;
   }
 
+  const currentAbs = Math.abs(m?.current ?? 0);
+  const effectiveDir = currentDirection(m);
+  // The reverse keyframe shows the cell physically flipped, so it follows
+  // the wiring: the signed DC direction, but never the AC oscillation.
+  const baseReverse =
+    (app.params.currentMode === 'ac' ? (app.params.currentDir || 1) : effectiveDir) < 0;
+
   app.scene.setJitter([0, 0]);
-  app.scene.drawScene();
+  app.scene.drawScene(baseReverse);
   // The base scene already contains the cardboard; redrawing it shifted makes
   // the board exposure pop during taps. Keep the board stable and vibrate the
   // lifted filings instead.
   if (o.shadows) app.filings.drawShadows(o);
   drawFilings();
-
-  const currentAbs = Math.abs(m?.current ?? 0);
-  const effectiveDir = currentDirection(m);
   const showFieldMotion = app.ui.showFieldPulses || app.ui.showFieldComets;
   if ((app.ui.showFieldLines || showFieldMotion || app.ui.showFieldArrows) &&
       (app.ui.currentOn || currentAbs > 0.5)) {

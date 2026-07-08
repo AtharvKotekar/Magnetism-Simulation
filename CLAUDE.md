@@ -10,7 +10,9 @@ share one codebase:
   `tool/extract_assets.py`).
 - **Coil** (loop through the board) — served from `coil/`, keyframe layers in
   `coil/assets/`, activated by `window.MAGNETISM_VARIANT = 'coil'` and
-  configured in `tool/js/variant.js`.
+  configured in `tool/js/variant.js`. `image0-rev.png` is the same keyframe
+  with the cell flipped; the renderer swaps to it whenever the signed DC
+  direction is right-to-left (never on AC oscillation).
 
 ## Run
 
