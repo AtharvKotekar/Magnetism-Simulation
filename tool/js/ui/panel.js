@@ -64,8 +64,8 @@ export function buildPanel(root, app) {
       row.className = 'ctl-row';
       const surge = document.createElement('button');
       surge.textContent = '⚡ Surge to 100 A';
-      surge.title = 'Continuous-shot move: ramp amplitude to 100 A, grow field lines to 14, ease falloff to 0.85 and tap — without re-sprinkling';
-      surge.onclick = () => app.liveSurge(100, 2.6, 14, 0.85);
+      surge.title = 'Continuous-shot move: ramp amplitude to 100 A, grow field lines to 14, ease falloff to 0.75 and tap — without re-sprinkling';
+      surge.onclick = () => app.liveSurge(100, 2.6, 14, 0.75);
       row.appendChild(surge);
       b.appendChild(row);
     }
