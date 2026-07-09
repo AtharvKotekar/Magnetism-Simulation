@@ -14,6 +14,7 @@ const COIL_UI = {
   fieldMotionColor: '#f8f5ec',
   fieldArrowColor: '#f8f5ec',
   fieldLineStrength: 2.2,
+  fieldLineOpacity: 0.35,
   fieldMaxRadiusPx: 1520,
   fieldFirstRadiusPx: 64,   // just outside the 10.5 mm hole rim (~58 px)
   // Near-even crossing spacing along the loop diameter (gap ratio ~1) with

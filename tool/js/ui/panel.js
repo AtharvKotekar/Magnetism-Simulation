@@ -241,6 +241,9 @@ export function buildPanel(root, app) {
     slider(b, 'Ring brightness', 0.2, 3, 0.05, app.ui.fieldLineStrength, '×', (v) => {
       app.ui.fieldLineStrength = v;
     });
+    slider(b, 'Ring opacity', 0.05, 1, 0.05, app.ui.fieldLineOpacity ?? 0.32, '', (v) => {
+      app.ui.fieldLineOpacity = v;
+    });
     slider(b, 'Max radius', 120, 2200, 10, app.ui.fieldMaxRadiusPx, ' px', (v) => {
       app.ui.fieldMaxRadiusPx = v;
       app.rebuildFieldOverlay();

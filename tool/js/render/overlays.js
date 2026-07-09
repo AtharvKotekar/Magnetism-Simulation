@@ -879,7 +879,11 @@ export class Overlays {
     gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
     gl.uniform2f(this.lu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     const c = o.color || [0.55, 0.85, 1.0];
-    gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], Math.min(0.72, 0.16 * o.intensity));
+    // o.opacity is the user's absolute line opacity (0..1); intensity only
+    // gates it (current off / ramping in), so full opacity really is full.
+    const presence = Math.max(0, Math.min(1, o.intensity ?? 1));
+    const alpha = Math.min(0.98, Math.max(0, o.opacity ?? 0.32) * presence);
+    gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], alpha);
     gl.drawArrays(gl.TRIANGLES, 0, this.fieldCount);
     gl.bindVertexArray(null);
   }

@@ -29,6 +29,7 @@ export const DEFAULT_UI = {
   currentArrowSize: 1.0,
   currentArrowStrength: 0.75,
   fieldLineStrength: 3.00,
+  fieldLineOpacity: 0.32,   // absolute line opacity; 1 = fully bright
   fieldMaxRadiusPx: 1450,
   fieldFirstRadiusPx: 67,
   fieldRadiusMultiplier: 1.47,

@@ -639,14 +639,13 @@ function sampleGradientPoint(rng, pattern, p, R, i, n, centerBias, attempts = 0)
   return [p.holeX + r * Math.cos(a), p.holeY + r * Math.sin(a)];
 }
 
+// Real sprinkling is Poisson: independent random positions, with the natural
+// clumps and voids that brings. A stratified grid (one filing per jittered
+// cell) reads as a woven lattice once thousands of filings are down.
 function sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts = 0) {
   const m = p.sprinkleEdgeMargin ?? 0.004;
-  const cols = Math.ceil(Math.sqrt(Math.max(1, n) * p.sheetW / p.sheetH));
-  const rows = Math.ceil(Math.max(1, n) / cols);
-  const j = i + attempts * 11;
-  const cx = j % cols, cy = Math.floor(j / cols) % rows;
-  let x = m + (cx + 0.5 + rng.range(-0.46, 0.46)) / cols * (p.sheetW - 2 * m);
-  let y = m + (cy + 0.5 + rng.range(-0.46, 0.46)) / rows * (p.sheetH - 2 * m);
+  let x = m + rng.f() * (p.sheetW - 2 * m);
+  let y = m + rng.f() * (p.sheetH - 2 * m);
   const bias = clamp01(centerBias) * rng.f() * rng.f() * 0.34;
   if (bias > 0.0001) {
     const { ax, ay, bx, by } = coilPoles(p);
@@ -659,16 +658,11 @@ function sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts = 0) {
   return [x, y];
 }
 
-function sampleStrayPoint(rng, p, i, n, attempts) {
+function sampleStrayPoint(rng, p) {
   const m = p.sprinkleEdgeMargin ?? 0.004;
-  const cols = Math.ceil(Math.sqrt(Math.max(1, n) * p.sheetW / p.sheetH));
-  const rows = Math.ceil(Math.max(1, n) / cols);
-  const j = i + attempts * 7;
-  const cx = j % cols, cy = Math.floor(j / cols) % rows;
-  const jx = rng.range(-0.48, 0.48), jy = rng.range(-0.48, 0.48);
   return [
-    m + (cx + 0.5 + jx) / cols * (p.sheetW - 2 * m),
-    m + (cy + 0.5 + jy) / rows * (p.sheetH - 2 * m),
+    m + rng.f() * (p.sheetW - 2 * m),
+    m + rng.f() * (p.sheetH - 2 * m),
   ];
 }
 
