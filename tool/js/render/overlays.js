@@ -1083,53 +1083,74 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    const total = Math.max(4, Math.round(opts.rings ?? 10));
-    const nStraight = Math.max(3, Math.round(total / 2)) | 1;   // odd
-    const nOvals = Math.max(1, Math.round((total - nStraight) / 2));
-    const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
-    const seg = 220;
-    // Straight bore lines stay INSIDE the solenoid: they span the coil's
-    // length plus a short stub past each end where the flux exits, instead
-    // of running across the whole sheet.
-    const halfSpan = L / 2 + boreR * 0.6;
-    for (let i = 0; i < nStraight; i++) {
-      const off = nStraight === 1 ? 0 : ((i / (nStraight - 1)) * 2 - 1) * boreR * 0.72;
+    // Textbook solenoid family (see any physics reference): CLOSED loops
+    // that run straight through the bore, exit an end, balloon around the
+    // side, and re-enter the other end — plus a few OPEN lines fanning out
+    // of the ends near the axis. Loops are nested and never cross.
+    const Lh = L / 2;
+    const nLoops = 2;                    // per side
+    const nSegPer = Math.max(24, Math.round((opts.segments ?? 96) / 2));
+    const halfEllipse = (cx2, cy2, semiA, semiB, a0, a1, ux2, uy2, nx2, ny2) => {
       const pts = [];
-      for (let sIdx = 0; sIdx <= seg; sIdx++) {
-        const t = -halfSpan + (2 * halfSpan * sIdx) / seg;
-        pts.push({ x: mx + ux * t + nx * off, y: my + uy * t + ny * off });
+      for (let i = 0; i <= nSegPer; i++) {
+        const th = a0 + (a1 - a0) * (i / nSegPer);
+        const du = semiA * Math.cos(th), dn = semiB * Math.sin(th);
+        pts.push({ x: cx2 + ux2 * du + nx2 * dn, y: cy2 + uy2 * du + ny2 * dn });
       }
-      pts.reverse();   // start beyond A (t = -reach side becomes... ensure A-side first)
-      addClipped(pts);
-    }
-    // Return ovals: bore-side edge flows toward A, outer edge back toward B.
-    for (let k = 0; k < nOvals; k++) {
-      // Strictly nested, never-crossing loops: each successive oval starts
-      // slightly closer to the coil (but always outside the winding, and
-      // outside the straight bore-line band) and reaches further out and
-      // further along the axis, fully containing the previous one.
-      const inner = boreR * (1.7 - 0.2 * k);
-      const outer = boreR * (2.7 + 1.6 * k);
-      const semiN = (outer - inner) / 2;
-      const cN = (outer + inner) / 2;
-      const semiU = L * (0.60 + 0.20 * k);
+      return pts;
+    };
+    for (let k = 0; k < nLoops; k++) {
+      const dIn = boreR * (0.30 + 0.28 * k);        // interior offset
+      const Rk = boreR * (2.3 + 1.7 * k);           // outer return distance
+      const Ek = boreR * (0.9 + 0.5 * k);           // end-cap axial reach
       for (const side of [1, -1]) {
-        const cx = mx + nx * side * cN, cy = my + ny * side * cN;
-        const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(semiN, semiU)) / Math.max(0.0015, pxToM * 8))));
+        const nS = { x: nx * side, y: ny * side };
         const pts = [];
-        for (let sIdx = 0; sIdx <= nSeg; sIdx++) {
-          const th = (sIdx / nSeg) * Math.PI * 2;
-          const du = semiU * Math.cos(th), dn = semiN * Math.sin(th);
-          pts.push({ x: cx + ux * du + nx * side * dn, y: cy + uy * du + ny * side * dn });
+        // interior: A end -> B end at n = dIn
+        for (let i = 0; i <= nSegPer; i++) {
+          const t = -Lh + (2 * Lh) * (i / nSegPer);
+          pts.push({ x: mx + ux * t + nS.x * dIn, y: my + uy * t + nS.y * dIn });
         }
-        // at the bore-side point (th=3pi/2 => dn=-semiN), array tangent is
-        // d/dth = -semiU*sin(th)*u => +semiU*u at 3pi/2: tangent = +u.
-        // Flow there must be toward A (-u); heads go toward decreasing s,
-        // so the array tangent must be +u. It already is — keep order.
+        // B-end cap: swing from dIn out to Rk (half ellipse, bulging past B)
+        const capC = (dIn + Rk) / 2, capS = (Rk - dIn) / 2;
+        pts.push(...halfEllipse(mx + ux * Lh, my + uy * Lh, Ek, capS,
+          -Math.PI / 2, Math.PI / 2, ux, uy, nS.x, nS.y).map(p =>
+          ({ x: p.x + nS.x * capC, y: p.y + nS.y * capC })));
+        // outer return: B -> A at ~Rk with a gentle outward bulge
+        for (let i = 1; i < nSegPer; i++) {
+          const t = Lh - (2 * Lh) * (i / nSegPer);
+          const bulge = Rk + boreR * 0.35 * Math.sin(Math.PI * (i / nSegPer));
+          pts.push({ x: mx + ux * t + nS.x * bulge, y: my + uy * t + nS.y * bulge });
+        }
+        // A-end cap: back in from Rk to dIn
+        pts.push(...halfEllipse(mx - ux * Lh, my - uy * Lh, Ek, capS,
+          Math.PI / 2, (3 * Math.PI) / 2, ux, uy, nS.x, nS.y).map(p =>
+          ({ x: p.x + nS.x * capC, y: p.y + nS.y * capC })));
+        pts.push({ ...pts[0] });
         addClipped(pts);
       }
     }
-
+    // open lines near the axis: through the bore, fanning out past the ends
+    const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
+    const fans = [[0, 0], [boreR * 0.14, 0.20], [-boreR * 0.14, -0.20]];
+    for (const [off, ang] of fans) {
+      const pts = [];
+      const dirA = { x: -ux * Math.cos(ang) + nx * Math.sin(ang), y: -uy * Math.cos(ang) + ny * Math.sin(ang) };
+      const dirB = { x: ux * Math.cos(ang) + nx * Math.sin(ang), y: uy * Math.cos(ang) + ny * Math.sin(ang) };
+      for (let i = nSegPer; i >= 1; i--) {   // beyond A, far tip first
+        const t = (i / nSegPer) * reach;
+        pts.push({ x: mx - ux * Lh + nx * off + dirA.x * t, y: my - uy * Lh + ny * off + dirA.y * t });
+      }
+      for (let i = 0; i <= nSegPer; i++) {   // through the bore
+        const t = -Lh + (2 * Lh) * (i / nSegPer);
+        pts.push({ x: mx + ux * t + nx * off, y: my + uy * t + ny * off });
+      }
+      for (let i = 1; i <= nSegPer; i++) {   // beyond B
+        const t = (i / nSegPer) * reach;
+        pts.push({ x: mx + ux * Lh + nx * off + dirB.x * t, y: my + uy * Lh + ny * off + dirB.y * t });
+      }
+      addClipped(pts);
+    }
     for (const line of lines) {
       pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
       if (arrowDensity > 0 && line.length > 1) {
