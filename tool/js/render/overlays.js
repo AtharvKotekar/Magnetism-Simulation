@@ -1088,12 +1088,15 @@ export class Overlays {
     const nOvals = Math.max(1, Math.round((total - nStraight) / 2));
     const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
     const seg = 220;
-    // Straight bore lines: first point is on the A side (flow destination).
+    // Straight bore lines stay INSIDE the solenoid: they span the coil's
+    // length plus a short stub past each end where the flux exits, instead
+    // of running across the whole sheet.
+    const halfSpan = L / 2 + boreR * 0.6;
     for (let i = 0; i < nStraight; i++) {
       const off = nStraight === 1 ? 0 : ((i / (nStraight - 1)) * 2 - 1) * boreR * 0.72;
       const pts = [];
       for (let sIdx = 0; sIdx <= seg; sIdx++) {
-        const t = -reach + (2 * reach * sIdx) / seg;
+        const t = -halfSpan + (2 * halfSpan * sIdx) / seg;
         pts.push({ x: mx + ux * t + nx * off, y: my + uy * t + ny * off });
       }
       pts.reverse();   // start beyond A (t = -reach side becomes... ensure A-side first)
