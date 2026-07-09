@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v11';
-import { SceneLayers } from './render/scene.js?v=coil-v11';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v11';
-import { Overlays } from './render/overlays.js?v=coil-v11';
+import { createGL } from './render/gl.js?v=coil-v12';
+import { SceneLayers } from './render/scene.js?v=coil-v12';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v12';
+import { Overlays } from './render/overlays.js?v=coil-v12';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v11';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v11';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v12';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v12';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v11';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v11';
+import { PRESETS } from './ui/presets.js?v=coil-v12';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v12';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v11';
+import { buildVariantConfig } from './variant.js?v=coil-v12';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v11', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v12', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -577,25 +577,35 @@ function sendCurrentState(log = true) {
 app.liveCurrent = () => sendCurrentState(true);
 
 // One-click continuous-shot surge: amplitude ramps to targetA while the
-// field-line count and falloff animate in step, plus a simultaneous tap so
-// the filings respond — the existing sprinkle is never touched.
+// field-line count, falloff, and the panel adjusters animate in step; taps
+// fire at start, mid-ramp, and ramp-end so the filings bloom with the rising
+// amplitude — the existing sprinkle is never touched.
 app.liveSurge = (targetA = 100, dur = 2.6, lines = 14, falloff = 0.85) => {
   const p = app.params;
-  p.currentA = targetA;
+  const fromA = p.currentA;
   app.ui.currentOn = true;
   syncCurrentSwitch();
   app.worker.postMessage({ type: 'current',
     opts: { on: true, amp: targetA, mode: p.currentMode, freq: p.acFreq, rampDur: dur } });
   logLive({ type: 'current', on: true, amp: targetA, mode: p.currentMode, rampDur: dur });
   app.liveTap();
+  setTimeout(() => app.liveTap(), dur * 550);
+  setTimeout(() => app.liveTap(), dur * 1000);
   const c0 = app.ui.fieldLineCount, f0 = app.ui.fieldFalloffCurve;
   const t0 = performance.now();
+  let lastPanel = 0;
   const step = () => {
     const u = Math.min(1, (performance.now() - t0) / (dur * 1000));
     const sm = u * u * (3 - 2 * u);
     app.ui.fieldLineCount = Math.round(c0 + (lines - c0) * sm);
     app.ui.fieldFalloffCurve = f0 + (falloff - f0) * sm;
+    p.currentA = Math.round(fromA + (targetA - fromA) * sm);
     rebuildFieldOverlay();
+    const now = performance.now();
+    if (now - lastPanel > 250 || u >= 1) {
+      lastPanel = now;
+      buildPanel(document.getElementById('panel'), app);
+    }
     if (u < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
