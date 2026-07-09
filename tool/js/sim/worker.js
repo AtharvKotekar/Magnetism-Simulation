@@ -195,11 +195,22 @@ class VisualEngine {
       attempts++;
       if (!insideSheet(x, y, p, edgeMargin)) continue;
       if (insideNoGo(x, y, p)) {
-        // Bar magnet: a share of the filings landing on the bar STICK to it
-        // (spawned as strays — pinned where they fell, drawn on top of the
-        // magnet by the renderer's second pass).
-        if (p.fieldModel === 'barMagnet' && rng.f() < 0.30) {
-          st.spawn(rng, p, placed++, x, y, true);
+        // Bar magnet: filings landing on the bar stick to it — heavily over
+        // the pole ends (dark mounds spilling onto the faces), sparsely in
+        // the middle — and lie along the axis like the real demo. Pinned
+        // strays; the renderer's second pass draws them above the magnet.
+        if (p.fieldModel === 'barMagnet') {
+          const poles = coilPoles(p);
+          const sep = Math.max(1e-6, Math.hypot(poles.bx - poles.ax, poles.by - poles.ay));
+          const dEnd = Math.min(Math.hypot(x - poles.ax, y - poles.ay),
+            Math.hypot(x - poles.bx, y - poles.by));
+          const w = clamp01(1 - dEnd / (sep * 0.42));
+          if (rng.f() < 0.10 + 0.80 * w * w) {
+            const k = placed++;
+            st.spawn(rng, p, k, x, y, true);
+            st.ang[k] = st.targetAng[k] =
+              Math.atan2(poles.by - poles.ay, poles.bx - poles.ax) + rng.normal() * 0.35;
+          }
         }
         continue;
       }

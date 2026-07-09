@@ -254,8 +254,8 @@ const BAR_PARAMS = {
   currentDir: 1,              // 1 = N pole on the left
   currentAutoAlign: true,     // permanent magnet: the field is always live
   currentMotion: 0.58,
-  inwardPull: 0.0032,         // filings crowd and cling to the bar
-  pullRadius: 0.05,
+  inwardPull: 0.0040,         // filings crowd and cling to the bar
+  pullRadius: 0.055,
   fieldReach30A: 0.200,       // whole paper responds, strongest at the poles
   fieldReferenceR: 0.045,
   fieldFalloffPower: 1.0,
@@ -276,7 +276,7 @@ const BAR_PARAMS = {
   strayCount: 2500,
   sprinkleR: 0.19,
   sprinklePattern: 'sheet',
-  sprinkleClump: 0.35,
+  sprinkleClump: 0.55,
 };
 
 export const BAR_PRESETS = [
@@ -288,7 +288,7 @@ export const BAR_PRESETS = [
     cal: { ...BAR_CALIBRATION },
     params: { ...BAR_PARAMS },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.19, clump: 0.35 },
+      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.19, clump: 0.55 },
     ],
   },
   {
@@ -302,7 +302,7 @@ export const BAR_PRESETS = [
       // The magnet is already there — its field is on before the sprinkle,
       // so nearby filings stick to the bar the moment they land.
       { t: 0.05, type: 'current', on: true, amp: 32, mode: 'dc', rampDur: 0.05 },
-      { t: 0.4, type: 'sprinkle', count: 17000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
+      { t: 0.4, type: 'sprinkle', count: 17000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.55 },
       { t: 1.6, type: 'tapBurst', n: 5, interval: 0.55, strength: 8 },
     ],
   },
