@@ -873,10 +873,10 @@ export class Overlays {
     const inside = (px, py) => {
       if (px < clipMargin || py < clipMargin ||
           px > sheetW - clipMargin || py > sheetH - clipMargin) return false;
-      if (ex && px > ex[0] && px < ex[2] && py > ex[1] && py < ex[3]) return false;
-      const ra = Math.hypot(px - ax, py - ay);
-      const rb = Math.hypot(px - bx, py - by);
-      return Math.min(ra, rb) <= rMax;
+      // No radial rMax cut: the ellipses are already sized to fit the sheet,
+      // and a pole-distance clip opens a mid-air gap at the outer loop's far
+      // arc (its bottom center is the farthest point from both poles).
+      return !(ex && px > ex[0] && px < ex[2] && py > ex[1] && py < ex[3]);
     };
     const lines = [];
     const addClipped = (pts) => {
@@ -948,13 +948,18 @@ export class Overlays {
       const Bell = T / (1 + q);
       const h = q * Bell;                                        // center offset off-axis
       const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(Aell, Bell)) / Math.max(0.0015, pxToM * 8))));
+      // The far edge (opposite the bulge) exists only to close the loop behind
+      // the bar; compress its off-axis dip so it always stays well inside the
+      // magnet silhouette instead of peeking past its top/bottom paint edge.
+      const dipScale = Math.min(1, (pxToM * 52) / Math.max(1e-9, Bell - h));
       for (const side of [1, -1]) {
-        const cx2 = mx + nx * side * h, cy2 = my + ny * side * h;
         const pts = [];
         for (let sI = 0; sI <= nSeg; sI++) {
           const th = (sI / nSeg) * Math.PI * 2;
-          const du = Aell * Math.cos(th), dn = Bell * Math.sin(th);
-          pts.push({ x: cx2 + ux * du + nx * side * dn, y: cy2 + uy * du + ny * side * dn });
+          const du = Aell * Math.cos(th);
+          let w = h + Bell * Math.sin(th);   // signed off-axis offset (bulge > 0)
+          if (w < 0) w *= dipScale;
+          pts.push({ x: mx + ux * du + nx * side * w, y: my + uy * du + ny * side * w });
         }
         addClipped(pts);
       }

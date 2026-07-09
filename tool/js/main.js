@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v36';
-import { SceneLayers } from './render/scene.js?v=coil-v36';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v36';
-import { Overlays } from './render/overlays.js?v=coil-v36';
+import { createGL } from './render/gl.js?v=coil-v37';
+import { SceneLayers } from './render/scene.js?v=coil-v37';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v37';
+import { Overlays } from './render/overlays.js?v=coil-v37';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v36';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v36';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v37';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v37';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v36';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v36';
+import { PRESETS } from './ui/presets.js?v=coil-v37';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v37';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v36';
+import { buildVariantConfig } from './variant.js?v=coil-v37';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v36', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v37', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -198,9 +198,17 @@ function rebuildFieldOverlay() {
       sheetH: app.cal.sheetH,
       clipMargin: 0.0025,
       excludeRect: (() => {
-        const r = barRectParams();
-        return Number.isFinite(r.barX0)
-          ? [r.barX0 - 0.001, r.barY0 - 0.001, r.barX1 + 0.001, r.barY1 + 0.001] : null;
+        // Clip field lines at the full painted silhouette (barClipRect), not
+        // the filings no-go box — that one sits 12 px inside the paint, and
+        // clipping there leaks line slivers along the magnet's outline.
+        const r = app.variant.barClipRect;
+        if (!r) return null;
+        const pts = [
+          app.homog.toPlane(r[0], r[1]), app.homog.toPlane(r[2], r[1]),
+          app.homog.toPlane(r[2], r[3]), app.homog.toPlane(r[0], r[3]),
+        ];
+        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+        return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
       })(),
       boreR: (app.variant.boreRadiusPx ?? 90) * pxToM,
       paths: app.variant.barFieldPaths?.map((path) => path.map(([px, py]) => {

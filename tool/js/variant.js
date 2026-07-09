@@ -428,6 +428,11 @@ const BAR_VARIANT = {
   // silhouette so filings press into the outline and the occluder covers
   // their tips: they read as physically stuck to the bar, like real filings.
   barBodyRect: [1099, 708, 1657, 820],
+  // Full painted silhouette (image2 alpha bbox mapped through occluderRect,
+  // +1 px for antialiasing) — the field-line clip box. Unlike barBodyRect it
+  // must COVER the paint, or loop edges dipping behind the bar leak out as
+  // white slivers along the magnet's outline.
+  barClipRect: [1085, 694, 1671, 834],
   currentOverlay: {},
   currentDirectionText(dir) {
     return dir < 0 ? 'N pole on the RIGHT (field flipped)' : 'N pole on the LEFT';
