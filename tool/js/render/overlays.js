@@ -893,13 +893,27 @@ export class Overlays {
       // The film's authored field-line art: wind each path against the
       // field so dash flow (dir=+1, toward decreasing arc) runs N -> S.
       for (const pts of opts.paths) {
-        const mid = pts[Math.floor(pts.length / 2)];
-        const nxt = pts[Math.min(pts.length - 1, Math.floor(pts.length / 2) + 1)];
-        const da2 = Math.max(1e-9, (mid.x - ax) ** 2 + (mid.y - ay) ** 2);
-        const db2 = Math.max(1e-9, (mid.x - bx) ** 2 + (mid.y - by) ** 2);
-        const hx = (mid.x - ax) / da2 - (mid.x - bx) / db2;
-        const hy = (mid.y - ay) / da2 - (mid.y - by) / db2;
-        const ordered = (nxt.x - mid.x) * hx + (nxt.y - mid.y) * hy > 0 ? [...pts].reverse() : pts;
+        // Majority-vote the flow over points OUTSIDE the bar: the two-pole
+        // model is only valid there (real interior flux runs S -> N, which a
+        // continuous through-line then carries automatically). A single
+        // midpoint sample can land inside/beside the bar and flip the line.
+        let dot = 0;
+        for (let i = 1; i < pts.length - 1; i++) {
+          const P = pts[i];
+          const t = ((P.x - ax) * (bx - ax) + (P.y - ay) * (by - ay)) / (sep * sep);
+          if (t > -0.06 && t < 1.06) {
+            const qx = ax + (bx - ax) * t, qy = ay + (by - ay) * t;
+            if (Math.hypot(P.x - qx, P.y - qy) < sep * 0.16) continue;   // inside the bar zone
+          }
+          const da2 = Math.max(1e-9, (P.x - ax) ** 2 + (P.y - ay) ** 2);
+          const db2 = Math.max(1e-9, (P.x - bx) ** 2 + (P.y - by) ** 2);
+          const hx = (P.x - ax) / da2 - (P.x - bx) / db2;
+          const hy = (P.y - ay) / da2 - (P.y - by) / db2;
+          dot += (pts[i + 1].x - pts[i - 1].x) * hx + (pts[i + 1].y - pts[i - 1].y) * hy;
+        }
+        // heads travel toward the array start, so the array must run
+        // anti-parallel to H for flow to follow N -> S outside.
+        const ordered = dot > 0 ? [...pts].reverse() : pts;
         addClipped(ordered);
       }
       for (const line of lines) {
