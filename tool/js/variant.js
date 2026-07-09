@@ -16,7 +16,7 @@ const COIL_UI = {
   fieldLineStrength: 2.2,
   fieldLineOpacity: 0.35,
   fieldMaxRadiusPx: 1520,
-  fieldFirstRadiusPx: 64,   // just outside the 10.5 mm hole rim (~58 px)
+  fieldFirstRadiusPx: 350,  // inner loop bulge (~0.6x pole separation)
   // Near-even crossing spacing along the loop diameter (gap ratio ~1) with
   // 11 circles per side + the axis line: the interior of the loop reads as a
   // dense parallel bundle, like the reference footage.
@@ -239,9 +239,9 @@ const BAR_UI = {
   fieldArrowColor: '#f8f5ec',
   fieldLineStrength: 2.2,
   fieldLineOpacity: 0.35,
-  fieldMaxRadiusPx: 900,
+  fieldMaxRadiusPx: 780,
   fieldFirstRadiusPx: 300,  // inner loop bulge
-  fieldRadiusMultiplier: 1.5,
+  fieldRadiusMultiplier: 1.35,
   fieldLineCount: 6,        // 3 pole-to-pole loops above + 3 below
   fieldLineThickness: 1.45,
   fieldMotionThickness: 0.65,

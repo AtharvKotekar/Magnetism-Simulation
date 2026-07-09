@@ -965,22 +965,7 @@ export class Overlays {
         addClipped(pts);
       }
     }
-    // Axis lines beyond each pole. Flow: away from N, into S — first point of
-    // each polyline is the flow destination (dashes travel toward s = 0).
-    const axisLen = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
-    const seg = 128;
-    const beyondN = [];   // from far edge (dest) back to N
-    const beyondS = [];   // from S (dest) out to far edge
-    for (let s = 0; s <= seg; s++) {
-      const t = (s / seg) * axisLen;
-      beyondN.push({ x: ax - ux * (axisLen - t), y: ay - uy * (axisLen - t) });
-      beyondS.push({ x: bx + ux * t, y: by + uy * t });
-    }
-    // beyondN is already far-edge-first (the flow destination); beyondS is
-    // S-first (flow arrives at S).
-    addClipped(beyondN);
-    addClipped(beyondS);
-
+    // (No axis lines: the reference shows only the pole-anchored loops.)
     for (const line of lines) {
       pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
       if (arrowDensity > 0 && line.length > 1) {
