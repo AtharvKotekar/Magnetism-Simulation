@@ -216,7 +216,9 @@ const BAR_CALIBRATION = {
   sheetW: 0.40,
   sheetH: 0.243,
   wireHeight: 0.012,        // magnet body height → vertical lift scale
-  holeWallR: 0.004,
+  // Filings really do stick to the bar: keep the no-go rim hair-thin so
+  // they press against the body outline instead of a visible offset band.
+  holeWallR: 0.0006,
 };
 
 const BAR_UI = {
@@ -250,8 +252,10 @@ const BAR_PARAMS = {
   currentA: 30,               // acts as magnet strength
   currentMode: 'dc',
   currentDir: 1,              // 1 = N pole on the left
-  currentAutoAlign: false,
+  currentAutoAlign: true,     // permanent magnet: the field is always live
   currentMotion: 0.58,
+  inwardPull: 0.0032,         // filings crowd and cling to the bar
+  pullRadius: 0.05,
   fieldReach30A: 0.200,       // whole paper responds, strongest at the poles
   fieldReferenceR: 0.045,
   fieldFalloffPower: 1.0,
@@ -259,8 +263,6 @@ const BAR_PARAMS = {
   chainSpacing: 0.0030,
   chainStrength: 0.55,
   chainCapture: 0.90,
-  inwardPull: 0.0025,
-  pullRadius: 0.040,
   axisPull: 0,
   visualFriction: 0.32,
   slideAmount: 0.82,
@@ -297,9 +299,11 @@ export const BAR_PRESETS = [
     cal: { ...BAR_CALIBRATION },
     params: { ...BAR_PARAMS, currentA: 32 },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 17000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
-      { t: 1.0, type: 'current', on: true, amp: 32, mode: 'dc', rampDur: 0.3 },
-      { t: 1.8, type: 'tapBurst', n: 5, interval: 0.55, strength: 8 },
+      // The magnet is already there — its field is on before the sprinkle,
+      // so nearby filings stick to the bar the moment they land.
+      { t: 0.05, type: 'current', on: true, amp: 32, mode: 'dc', rampDur: 0.05 },
+      { t: 0.4, type: 'sprinkle', count: 17000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
+      { t: 1.6, type: 'tapBurst', n: 5, interval: 0.55, strength: 8 },
     ],
   },
   {

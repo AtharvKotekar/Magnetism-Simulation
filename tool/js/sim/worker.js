@@ -207,6 +207,14 @@ class VisualEngine {
       st.spawn(rng, p, placed++, x, y, true);
     }
     st.n = placed;
+    // Permanent-magnet behavior (currentAutoAlign): the field is always
+    // live, so filings that land near the magnet snap toward it and stick
+    // immediately — no tap or switch-on moment needed.
+    const liveAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
+    if (this.p.currentAutoAlign && liveAbs > 0.1) {
+      this.updateTargets(0.55);
+      this.wakeFor(1.0);
+    }
     return placed;
   }
 
