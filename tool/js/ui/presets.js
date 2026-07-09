@@ -110,4 +110,12 @@ export const PRESETS = [
     duration: 20,
     timeline: [],
   },
+  {
+    name: 'Surge stage 25→100 A',
+    hint: 'Continuous-shot setup: 25 A, 10 rings, falloff 1.0, no sprinkle. Arrange the filings, roll camera, then hit ⚡ Surge to ramp amplitude to 100 A with 14 rings and falloff 0.85 plus a tap — all in one move.',
+    duration: 24,
+    ui: { currentOn: true, fieldLineCount: 10, fieldFalloffCurve: 1.0 },
+    params: { currentA: 25, currentMode: 'dc', rampDur: 0.4 },
+    timeline: [],
+  },
 ];

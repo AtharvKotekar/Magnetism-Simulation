@@ -59,6 +59,16 @@ export function buildPanel(root, app) {
       select(b, 'Coil turns', [['1', '1 coil'], ['2', '2 coils'], ['3', '3 coils']],
         String(app.ui.coilTurns ?? 1), (v) => { app.setCoilTurns(+v); });
     }
+    {
+      const row = document.createElement('div');
+      row.className = 'ctl-row';
+      const surge = document.createElement('button');
+      surge.textContent = '⚡ Surge to 100 A';
+      surge.title = 'Continuous-shot move: ramp amplitude to 100 A, grow field lines to 14, ease falloff to 0.85 and tap — without re-sprinkling';
+      surge.onclick = () => app.liveSurge(100, 2.6, 14, 0.85);
+      row.appendChild(surge);
+      b.appendChild(row);
+    }
     subhead(b, 'CONDUCTOR OVERLAY');
     check(b, 'Overlay visible', app.ui.showIndicator, (v) => { app.ui.showIndicator = v; });
     check(b, 'Pulses', app.ui.showCurrentPulses, (v) => { app.ui.showCurrentPulses = v; });
