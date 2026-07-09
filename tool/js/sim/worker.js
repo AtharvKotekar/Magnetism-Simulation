@@ -285,6 +285,10 @@ class VisualEngine {
       this.updateCoilTargets(impulse);
       return;
     }
+    if (this.p.fieldModel === 'barMagnet') {
+      this.updateBarTargets(impulse);
+      return;
+    }
     const st = this.st, p = this.p;
     const reach = this.currentReach();
     const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
@@ -428,6 +432,85 @@ class VisualEngine {
       const drift = st.thetaDrift[i] * spacing * 0.9 * chain * slideGain;
       let tx = x + gxn * (toBand + inward) + ux * axisStep + fx * drift;
       let ty = y + gyn * (toBand + inward) + uy * axisStep + fy * drift;
+      const pushed = pushOutOfNoGo(tx, ty, p, this.rng);
+      if (pushed) { tx = pushed[0]; ty = pushed[1]; }
+      st.targetX[i] = clamp(tx, margin, p.sheetW - margin);
+      st.targetY[i] = clamp(ty, margin, p.sheetH - margin);
+      st.targetAng[i] = Math.atan2(fy, fx) + st.angleNoise[i] * (0.42 - 0.34 * chain);
+      st.targetAlign[i] = Math.max(st.targetAlign[i] * 0.985, clamp01(chain * impulse * (0.88 + 0.30 * slideGain)));
+      if (chain * impulse > 0.025) st.state[i] = AWAKE;
+    }
+  }
+
+  updateBarTargets(impulse) {
+    // Bar magnet lying ON the paper: here the two poles really are a
+    // source/sink pair, so filings follow H = dN/dN² − dS/dS² and chain onto
+    // the circular arcs through both poles — level sets of the conjugate
+    // stream angle ψ = θN − θS. The branch cut of ψ lies on the segment
+    // between the poles, safely hidden under the magnet body (a no-go rect).
+    const st = this.st, p = this.p;
+    const reach = this.currentReach();
+    const currentAbs = Math.max(Math.abs(this.currentValue()), Math.abs(this.current.target));
+    const currentScale = Math.sqrt(Math.max(0.08, currentAbs / 30));
+    const poles = coilPoles(p);
+    const ax = poles.ax, ay = poles.ay, bx = poles.bx, by = poles.by;
+    const direction = p.currentDir < 0 ? -1 : 1;
+    const friction = clamp01(p.visualFriction ?? 0.48);
+    const slide = clamp01((1 - friction) * (p.slideAmount ?? 1.0));
+    const slideGain = slide * clamp(0.28 + impulse * 0.70, 0.22, 0.95);
+    const spacing = p.chainSpacing ?? 0.0030;
+    const dpsi = clamp(spacing / Math.max(1e-4, p.fieldReferenceR ?? 0.045), 0.02, 0.30) *
+      (1.03 - 0.08 * currentScale);
+    const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+    const margin = p.sprinkleEdgeMargin ?? 0.004;
+    const snapCap = spacing * 3.5;
+    const pullR = Math.max(0.005, p.pullRadius ?? 0.04);
+
+    for (let i = 0; i < st.n; i++) {
+      if (st.stray[i]) continue;
+      const x = st.baseX[i], y = st.baseY[i];
+      const dax = x - ax, day = y - ay;
+      const dbx = x - bx, dby = y - by;
+      const da = Math.max(rim, Math.hypot(dax, day));
+      const db = Math.max(rim, Math.hypot(dbx, dby));
+      const invA = 1 / (da * da);
+      const invB = 1 / (db * db);
+      // g IS the field here (N source, S sink); |g| ∝ |H|.
+      const gx = dax * invA - dbx * invB;
+      const gy = day * invA - dby * invB;
+      const gLen = Math.max(1e-9, Math.hypot(gx, gy));
+      const field = coilInfluence(gLen, currentAbs, reach, p);
+      const desired = responseMask(field, p) * st.chainGain[i];
+      st.fieldResponse[i] = field;
+      if (desired <= 0.001) {
+        st.targetX[i] = st.baseX[i];
+        st.targetY[i] = st.baseY[i];
+        st.targetAng[i] = st.ang[i];
+        st.targetAlign[i] *= 0.92;
+        continue;
+      }
+
+      const gxn = gx / gLen, gyn = gy / gLen;
+      const fx = gxn * direction, fy = gyn * direction;
+      const psi = wrapAngle(Math.atan2(day, dax) - Math.atan2(dby, dbx));
+      const bandIdx = Math.round(psi / dpsi + st.ringNoise[i] * 0.30);
+      const maze = 0.74 + 0.26 * Math.sin(bandIdx * 1.93 + (da - db) * 37 + st.chainPhase[i]);
+      const chain = clamp01(desired * (p.chainStrength ?? 1.0) * maze);
+      // Newton step onto the arc, along ∇ψ = rot90(g) (same magnitude as g).
+      const toBand = clamp((bandIdx * dpsi - psi) / gLen, -snapCap, snapCap) *
+        (p.chainCapture ?? 0.85) * chain * (0.9 + 0.4 * slideGain);
+      const minD = Math.min(da, db);
+      const nearB = db < da;
+      const inwardLimit = Math.max(0, minD - rim);
+      const pullZone = clamp01(1 - minD / pullR);
+      const inward = Math.min(inwardLimit,
+        (p.inwardPull ?? 0.0025) * currentScale * chain * impulse) *
+        pullZone * pullZone;
+      const inX = nearB ? (bx - x) / Math.max(1e-9, db) : (ax - x) / Math.max(1e-9, da);
+      const inY = nearB ? (by - y) / Math.max(1e-9, db) : (ay - y) / Math.max(1e-9, da);
+      const drift = st.thetaDrift[i] * spacing * 0.9 * chain * slideGain;
+      let tx = x + (-gyn) * toBand + inX * inward + fx * drift;
+      let ty = y + gxn * toBand + inY * inward + fy * drift;
       const pushed = pushOutOfNoGo(tx, ty, p, this.rng);
       if (pushed) { tx = pushed[0]; ty = pushed[1]; }
       st.targetX[i] = clamp(tx, margin, p.sheetW - margin);
@@ -612,7 +695,7 @@ class VisualState {
 }
 
 function sampleGradientPoint(rng, pattern, p, R, i, n, centerBias, attempts = 0) {
-  if (p.fieldModel === 'coilDipole' && pattern === 'sheet') {
+  if ((p.fieldModel === 'coilDipole' || p.fieldModel === 'barMagnet') && pattern === 'sheet') {
     return sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts);
   }
   const margin = p.sprinkleEdgeMargin ?? 0.004;
@@ -697,6 +780,10 @@ function coilPoles(p) {
 
 function insideNoGo(x, y, p) {
   const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+  if (p.fieldModel === 'barMagnet' && Number.isFinite(p.barX0)) {
+    return x > p.barX0 - rim && x < p.barX1 + rim &&
+           y > p.barY0 - rim && y < p.barY1 + rim;
+  }
   if (p.fieldModel === 'coilDipole') {
     const { ax, ay, bx, by } = coilPoles(p);
     const da2 = (x - ax) * (x - ax) + (y - ay) * (y - ay);
@@ -709,6 +796,17 @@ function insideNoGo(x, y, p) {
 
 function pushOutOfNoGo(x, y, p, rng) {
   const rim = p.holeWallR + (p.rimClearance ?? 0.0004);
+  if (p.fieldModel === 'barMagnet' && Number.isFinite(p.barX0)) {
+    // Push out of the magnet body rectangle via the nearest edge.
+    if (!insideNoGo(x, y, p)) return null;
+    const dl = x - (p.barX0 - rim), dr = (p.barX1 + rim) - x;
+    const dt = y - (p.barY0 - rim), dbm = (p.barY1 + rim) - y;
+    const m = Math.min(dl, dr, dt, dbm);
+    if (m === dl) return [p.barX0 - rim, y];
+    if (m === dr) return [p.barX1 + rim, y];
+    if (m === dt) return [x, p.barY0 - rim];
+    return [x, p.barY1 + rim];
+  }
   const centers = p.fieldModel === 'coilDipole'
     ? (() => {
         const { ax, ay, bx, by } = coilPoles(p);

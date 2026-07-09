@@ -29,6 +29,7 @@ const COIL_UI = {
 
 export function buildVariantConfig(name = 'straight') {
   if (name === 'coil') return COIL_VARIANT;
+  if (name === 'bar') return BAR_VARIANT;
   return STRAIGHT_VARIANT;
 }
 
@@ -196,6 +197,145 @@ export const COIL_PRESETS = [
     timeline: [],
   },
 ];
+
+// Bar magnet on TOP of the paper. Measured from the extracted SVG layers:
+// paper corners from image0, magnet body box from the image2 alpha mapped
+// through its SVG placement rect [1086,695,585,138]; poles at the body's end
+// faces. coilLeft/coilRight double as the N/S pole pins.
+const BAR_CALIBRATION = {
+  corners: {
+    tl: [246, 92],
+    tr: [2520, 84],
+    br: [2512, 1466],
+    bl: [224, 1490],
+  },
+  hole: [1378, 764],        // magnet center (lift-scale origin)
+  coilLeft: [1087, 764],    // N pole face
+  coilRight: [1669, 764],   // S pole face
+  wireTop: [1378, 690],     // top edge of the magnet body
+  sheetW: 0.40,
+  sheetH: 0.243,
+  wireHeight: 0.012,        // magnet body height → vertical lift scale
+  holeWallR: 0.004,
+};
+
+const BAR_UI = {
+  ...DEFAULT_UI,
+  showIndicator: false,       // no conductor — permanent magnet
+  showCurrentPulses: false,
+  showCurrentComets: false,
+  showCurrentCometHeads: false,
+  showCurrentArrows: false,
+  showFieldLines: true,
+  showFieldPulses: false,
+  showFieldComets: true,
+  showFieldCometHeads: true,
+  showFieldArrows: false,
+  fieldLineColor: '#f8f5ec',
+  fieldMotionColor: '#f8f5ec',
+  fieldArrowColor: '#f8f5ec',
+  fieldLineStrength: 2.2,
+  fieldLineOpacity: 0.35,
+  fieldMaxRadiusPx: 1650,
+  fieldFirstRadiusPx: 46,     // first arc bulge above/below the magnet
+  fieldRadiusMultiplier: 1.22,
+  fieldLineCount: 16,
+  fieldLineThickness: 1.45,
+  fieldMotionThickness: 0.65,
+  boardShake: 0.72,
+};
+
+const BAR_PARAMS = {
+  fieldModel: 'barMagnet',
+  currentA: 30,               // acts as magnet strength
+  currentMode: 'dc',
+  currentDir: 1,              // 1 = N pole on the left
+  currentAutoAlign: false,
+  currentMotion: 0.58,
+  fieldReach30A: 0.200,       // whole paper responds, strongest at the poles
+  fieldReferenceR: 0.045,
+  fieldFalloffPower: 1.0,
+  fieldMinResponse: 0.004,
+  chainSpacing: 0.0030,
+  chainStrength: 0.55,
+  chainCapture: 0.90,
+  inwardPull: 0.0025,
+  pullRadius: 0.040,
+  axisPull: 0,
+  visualFriction: 0.32,
+  slideAmount: 0.82,
+  alignSpeed: 4.2,
+  rotateSpeed: 5.7,
+  tapStrength: 8.0,
+  tapLiftAll: 1.0,
+  tapJitterAmount: 0.22,
+  filingMedianL: 0.62e-3,
+  sprinkleCount: 18000,
+  strayCount: 2500,
+  sprinkleR: 0.19,
+  sprinklePattern: 'sheet',
+  sprinkleClump: 0.35,
+};
+
+export const BAR_PRESETS = [
+  {
+    name: 'Manual bar stage',
+    hint: 'Magnet on the paper, full sprinkle — tap to reveal the field.',
+    duration: 20,
+    ui: { ...BAR_UI },
+    cal: { ...BAR_CALIBRATION },
+    params: { ...BAR_PARAMS },
+    timeline: [
+      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.19, clump: 0.35 },
+    ],
+  },
+  {
+    name: 'Bar magnet reveal',
+    hint: 'Sprinkle, then taps arrange the filings along the magnet field.',
+    duration: 10,
+    ui: { ...BAR_UI },
+    cal: { ...BAR_CALIBRATION },
+    params: { ...BAR_PARAMS, currentA: 32 },
+    timeline: [
+      { t: 0.2, type: 'sprinkle', count: 17000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
+      { t: 1.0, type: 'current', on: true, amp: 32, mode: 'dc', rampDur: 0.3 },
+      { t: 1.8, type: 'tapBurst', n: 5, interval: 0.55, strength: 8 },
+    ],
+  },
+  {
+    name: 'Bare bar stage',
+    hint: 'Empty timeline — drive the magnet stage live from the panel.',
+    duration: 20,
+    ui: { ...BAR_UI },
+    cal: { ...BAR_CALIBRATION },
+    params: { ...BAR_PARAMS },
+    timeline: [],
+  },
+];
+
+const BAR_VARIANT = {
+  name: 'bar',
+  brandHTML: 'MAGNETISM <span>BAR MAGNET</span>',
+  scene: {
+    assetsBase: 'assets/',
+    // Magnet body+shadow plate drawn under the filings; the body-only layer
+    // occludes filings above (the magnet rests ON the paper).
+    underlay: { src: 'assets/magnet-under.png', rect: [1076, 690, 647, 194] },
+    occluderRect: [1086, 695, 585, 138],
+  },
+  calibrationKey: 'bar',
+  defaultCalibration: BAR_CALIBRATION,
+  fieldOverlay: 'bar',
+  // Magnet body box in image px (from the image2 alpha): filings never
+  // settle underneath the bar.
+  barBodyRect: [1087, 696, 1669, 832],
+  currentOverlay: {},
+  currentDirectionText(dir) {
+    return dir < 0 ? 'N pole on the RIGHT (field flipped)' : 'N pole on the LEFT';
+  },
+  params: BAR_PARAMS,
+  presets: BAR_PRESETS,
+};
 
 const COIL_VARIANT = {
   name: 'coil',

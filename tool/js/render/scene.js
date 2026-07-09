@@ -43,6 +43,9 @@ export class SceneLayers {
     // Drawn instead of the base occluder; each bundle covers the arch baked
     // into the keyframe with its outermost tube.
     this.turnOverlays = opts.turnOverlays || null;
+    // Optional static underlay {src, rect} drawn between the base scene and
+    // the filings (e.g. the bar magnet's shadowed base plate on the paper).
+    this.underlay = opts.underlay || null;
     this.occluderRect = opts.occluderRect || OCCLUDER_RECT;
     this.prog = compileProgram(gl, VS, FS);
     this.vao = unitQuadVAO(gl);
@@ -71,6 +74,14 @@ export class SceneLayers {
         this.sceneReverse = await loadTexture(gl, this.reverseBase);
       } catch {
         this.sceneReverse = null;   // optional — fall back to the base keyframe
+      }
+    }
+    this.underTex = null;
+    if (this.underlay) {
+      try {
+        this.underTex = await loadTexture(gl, this.underlay.src);
+      } catch {
+        this.underTex = null;
       }
     }
     this.turnTex = {};
@@ -116,6 +127,10 @@ export class SceneLayers {
     gl.disable(gl.BLEND);
     this.drawQuad(tex, [0, 0, this.W, this.H]);
     gl.enable(gl.BLEND);
+    if (this.underTex && this.underlay?.rect) {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      this.drawQuad(this.underTex.tex, this.underlay.rect);
+    }
   }
 
   drawOccluder(turns = 1) {

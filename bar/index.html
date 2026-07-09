@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Magnetism Stage — Bar Magnet Field Simulator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../tool/css/app.css?v=bar-v1">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div id="brand">MAGNETISM <span>BAR MAGNET</span></div>
+    <div id="topstats">
+      <span id="stat-time">t = 0.00 s</span>
+      <span id="stat-current">I = 0.0 A</span>
+      <span id="stat-count">0 filings</span>
+      <span id="stat-awake">0 awake</span>
+      <span id="stat-fps">— fps</span>
+    </div>
+    <div id="topactions">
+      <button id="btn-restart" title="Deterministically restart the take from t=0">⟲ Restart take</button>
+      <button id="btn-playpause">⏸ Pause</button>
+      <button id="btn-record" class="rec">● Record</button>
+    </div>
+  </header>
+
+  <main id="stage-wrap">
+    <div id="stage">
+      <canvas id="gl-canvas" width="2752" height="1536"></canvas>
+      <div id="pin-layer"></div>
+    </div>
+    <aside id="panel"></aside>
+  </main>
+
+  <footer id="timeline-bar">
+    <div id="timeline-controls">
+      <span class="tl-label">TAKE TIMELINE</span>
+      <button id="btn-add-event">+ event</button>
+      <label class="tl-loglive"><input type="checkbox" id="chk-log-live"> log live actions</label>
+      <span id="take-hash" title="Deterministic take hash (seed + parameters + timeline)">take #—</span>
+    </div>
+    <div id="timeline-events"></div>
+  </footer>
+</div>
+<script>
+  window.MAGNETISM_VARIANT = 'bar';
+</script>
+<script type="module" src="../tool/js/main.js?v=bar-v1"></script>
+</body>
+</html>

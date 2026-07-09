@@ -836,6 +836,164 @@ export class Overlays {
     gl.bindVertexArray(null);
   }
 
+  // Bar magnet: field lines are the circular arcs through both poles (plus
+  // the axis line beyond each pole). Each arc is wound S → N so the dash
+  // shader's dir=+1 flow (toward decreasing arc) runs N → S along the line,
+  // the way field lines leave N and enter S.
+  buildBarFieldLines(poleN, poleS, rMax, opts = {}) {
+    const gl = this.gl;
+    const verts = [];
+    const dashVerts = [];
+    const arrowVerts = [];
+    const nLines = Math.max(2, Math.round(opts.rings ?? 12));
+    const perSide = Math.max(1, Math.round(nLines / 2));
+    const firstBulge = Math.max(0.004, opts.firstRadius ?? 0.01);
+    const gapRatio = Math.max(1.01, opts.radiusMultiplier ?? 1.2);
+    const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
+    const thickness = Math.max(0.15, opts.thickness ?? 1);
+    const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
+    const arrowSize = Math.max(0.25, opts.arrowSize ?? 1);
+    const bandHalfWidth = Math.max(0.00006, pxToM * 1.55) * thickness;
+    const arrowSpacing = Math.max(32, 250 / Math.max(0.25, arrowDensity));
+    const arrowLen = Math.max(0.0015, pxToM * 24) * arrowSize;
+    const arrowWid = arrowLen * 0.46;
+    this.fieldPxToM = pxToM;
+
+    const ax = poleN[0], ay = poleN[1];
+    const bx = poleS[0], by = poleS[1];
+    const dx = bx - ax, dy = by - ay;
+    const sep = Math.max(1e-6, Math.hypot(dx, dy));
+    const ux = dx / sep, uy = dy / sep;
+    const nx = -uy, ny = ux;
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const sheetW = opts.sheetW ?? Infinity;
+    const sheetH = opts.sheetH ?? Infinity;
+    const clipMargin = opts.clipMargin ?? 0.002;
+    const inside = (px, py) => {
+      if (px < clipMargin || py < clipMargin ||
+          px > sheetW - clipMargin || py > sheetH - clipMargin) return false;
+      const ra = Math.hypot(px - ax, py - ay);
+      const rb = Math.hypot(px - bx, py - by);
+      return Math.min(ra, rb) <= rMax;
+    };
+    const lines = [];
+    const addClipped = (pts) => {
+      let run = [];
+      const flush = () => { if (run.length > 2) lines.push(arcLengthPlane(run, pxToM)); run = []; };
+      for (const p of pts) { if (inside(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+    };
+    const local = [
+      [arrowLen * 0.70, 0],
+      [-arrowLen * 0.55, -arrowWid],
+      [-arrowLen * 0.55, arrowWid],
+    ];
+
+    // Arc bulges grow with ratio gapRatio, crowding near the magnet.
+    const maxBulge = Math.min(rMax, sep * 2.2);
+    const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
+    for (let k = 0; k < perSide; k++) {
+      const frac = perSide === 1 ? 0
+        : denom > 1e-6 ? (Math.pow(gapRatio, k) - 1) / denom : k / (perSide - 1);
+      const b = firstBulge + (maxBulge - firstBulge) * frac;
+      const h = (sep * sep / 4 - b * b) / (2 * b);   // center offset from axis
+      const R = b + h;
+      for (const side of [1, -1]) {
+        const cx = mx - nx * h * side, cy = my - ny * h * side;
+        // angles of S and N around the center; walk the bulge-side arc S → N
+        const aS = Math.atan2(by - cy, bx - cx);
+        const aN = Math.atan2(ay - cy, ax - cx);
+        let sweep = aN - aS;
+        // pick the arc passing the bulge side: its midpoint must lie at
+        // mid + n̂·side·b
+        const norm = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+        sweep = norm(sweep);
+        const midA = aS + sweep / 2;
+        const midPt = [cx + Math.abs(R) * Math.cos(midA), cy + Math.abs(R) * Math.sin(midA)];
+        const wantX = mx + nx * side * b, wantY = my + ny * side * b;
+        if (Math.hypot(midPt[0] - wantX, midPt[1] - wantY) > Math.abs(b)) {
+          sweep = sweep > 0 ? sweep - 2 * Math.PI : sweep + 2 * Math.PI;
+        }
+        const nSeg = Math.min(2048, Math.max(48, Math.ceil(Math.abs(sweep) * Math.abs(R) / Math.max(0.0015, pxToM * 8))));
+        const pts = [];
+        for (let s = 0; s <= nSeg; s++) {
+          const a = aS + sweep * (s / nSeg);
+          pts.push({ x: cx + Math.abs(R) * Math.cos(a), y: cy + Math.abs(R) * Math.sin(a) });
+        }
+        addClipped(pts);
+      }
+    }
+    // Axis lines beyond each pole. Flow: away from N, into S — first point of
+    // each polyline is the flow destination (dashes travel toward s = 0).
+    const axisLen = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
+    const seg = 128;
+    const beyondN = [];   // from far edge (dest) back to N
+    const beyondS = [];   // from S (dest) out to far edge
+    for (let s = 0; s <= seg; s++) {
+      const t = (s / seg) * axisLen;
+      beyondN.push({ x: ax - ux * (axisLen - t), y: ay - uy * (axisLen - t) });
+      beyondS.push({ x: bx + ux * t, y: by + uy * t });
+    }
+    // beyondN is already far-edge-first (the flow destination); beyondS is
+    // S-first (flow arrives at S).
+    addClipped(beyondN);
+    addClipped(beyondS);
+
+    for (const line of lines) {
+      pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
+      if (arrowDensity > 0 && line.length > 1) {
+        const total = line[line.length - 1].s;
+        for (let s = arrowSpacing * 0.7; s < total - arrowSpacing * 0.35; s += arrowSpacing) {
+          const p = samplePlanePolyline(line, s);
+          if (!p) continue;
+          for (const l of local) arrowVerts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+        }
+      }
+    }
+
+    this.fieldVectorLines = lines;
+    this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
+  }
+
+  uploadFieldGeometry(verts, dashVerts, arrowVerts) {
+    const gl = this.gl;
+    this.fieldCount = verts.length / 2;
+    if (!this.fieldVAO) this.fieldVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldVAO);
+    if (!this.fieldBuf) this.fieldBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    this.fieldDashCount = dashVerts.length / 4;
+    if (!this.fieldDashVAO) this.fieldDashVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldDashVAO);
+    if (!this.fieldDashBuf) this.fieldDashBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldDashBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dashVerts), gl.STATIC_DRAW);
+    const dashStride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, dashStride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, dashStride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, dashStride, 12);
+    gl.bindVertexArray(null);
+
+    this.fieldArrowCount = 0;
+    this.fieldCometHeadCount = 0;
+    this.fieldVectorArrowCount = arrowVerts.length / 6;
+    if (!this.fieldVectorArrowVAO) this.fieldVectorArrowVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldVectorArrowVAO);
+    if (!this.fieldVectorArrowBuf) this.fieldVectorArrowBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldVectorArrowBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrowVerts), gl.STATIC_DRAW);
+    const stride = 24;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.bindVertexArray(null);
+  }
+
   // Reprojection grid for calibration mode: 2 cm grid over the sheet plane.
   buildGrid(sheetW, sheetH, step = 0.02) {
     const gl = this.gl;

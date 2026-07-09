@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v8';
-import { SceneLayers } from './render/scene.js?v=coil-v8';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v8';
-import { Overlays } from './render/overlays.js?v=coil-v8';
+import { createGL } from './render/gl.js?v=coil-v9';
+import { SceneLayers } from './render/scene.js?v=coil-v9';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v9';
+import { Overlays } from './render/overlays.js?v=coil-v9';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v8';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v8';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v9';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v9';
 import { TimelineUI } from './ui/timelineui.js';
 import { PRESETS } from './ui/presets.js';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v8';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v9';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v8';
+import { buildVariantConfig } from './variant.js?v=coil-v9';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v8', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v9', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -173,8 +173,13 @@ function rebuildFieldOverlay() {
   const pxPerM = Math.sqrt(Math.max(1e-9, Math.abs(app.detJHole || 1)));
   const pxToM = 1 / pxPerM;
   const rMax = Math.max(4, app.ui.fieldMaxRadiusPx ?? 1450) * pxToM;
-  if (app.variant.fieldOverlay === 'coil' && app.coilLeftPlane && app.coilRightPlane) {
-    app.overlays.buildCoilFieldLines(app.coilLeftPlane, app.coilRightPlane, rMax, {
+  const twoPole = (app.variant.fieldOverlay === 'coil' || app.variant.fieldOverlay === 'bar') &&
+    app.coilLeftPlane && app.coilRightPlane;
+  if (twoPole) {
+    const build = app.variant.fieldOverlay === 'bar'
+      ? app.overlays.buildBarFieldLines.bind(app.overlays)
+      : app.overlays.buildCoilFieldLines.bind(app.overlays);
+    build(app.coilLeftPlane, app.coilRightPlane, rMax, {
       rings: app.ui.fieldLineCount,
       firstRadius: Math.max(1, app.ui.fieldFirstRadiusPx ?? 52) * pxToM,
       radiusMultiplier: app.ui.fieldRadiusMultiplier,
@@ -501,7 +506,8 @@ function simParams() {
     sheetH: app.cal.sheetH,
     holeWallR: app.cal.holeWallR,
   };
-  if (app.variant.fieldOverlay === 'coil' && app.coilLeftPlane && app.coilRightPlane) {
+  if ((app.variant.fieldOverlay === 'coil' || app.variant.fieldOverlay === 'bar') &&
+      app.coilLeftPlane && app.coilRightPlane) {
     params.poleAX = app.coilLeftPlane[0];
     params.poleAY = app.coilLeftPlane[1];
     params.poleBX = app.coilRightPlane[0];
@@ -509,7 +515,25 @@ function simParams() {
     params.holeX = (params.poleAX + params.poleBX) * 0.5;
     params.holeY = (params.poleAY + params.poleBY) * 0.5;
   }
+  Object.assign(params, barRectParams());
   return params;
+}
+
+
+// Bar magnet body rectangle (image px) backprojected into plane meters —
+// the worker keeps filings out of it (the magnet sits ON the paper).
+function barRectParams() {
+  const r = app.variant.barBodyRect;
+  if (!r || !app.homog) return {};
+  const pts = [
+    app.homog.toPlane(r[0], r[1]), app.homog.toPlane(r[2], r[1]),
+    app.homog.toPlane(r[2], r[3]), app.homog.toPlane(r[0], r[3]),
+  ];
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  return {
+    barX0: Math.min(...xs), barX1: Math.max(...xs),
+    barY0: Math.min(...ys), barY1: Math.max(...ys),
+  };
 }
 
 app.pushParams = (patch) => app.worker.postMessage({ type: 'params', patch });
@@ -675,6 +699,7 @@ function calibrationChanged(rebuildPanelToo = true) {
       holeY: (app.coilLeftPlane[1] + app.coilRightPlane[1]) * 0.5,
     } : {}),
     sheetW: app.cal.sheetW, sheetH: app.cal.sheetH, holeWallR: app.cal.holeWallR,
+    ...barRectParams(),
   });
   refreshTakeHash();
 }

@@ -19,6 +19,15 @@ share one codebase:
   own ray-traced current path. Visual only — the field model does not scale
   with turn count.
 
+- **Bar magnet** (magnet ON TOP of the paper) — served from `bar/`, layers
+  extracted from `Magnetic Feild Bar magnet fillings.svg` into `bar/assets/`
+  (image0 paper scene, image1 generated paper clip mask, image2 magnet-top
+  occluder, magnet-under.png shadow underlay), activated by
+  `window.MAGNETISM_VARIANT = 'bar'`. Here the poles REALLY are a
+  source/sink pair: filings follow H = dN/dN² − dS/dS² and chain onto the
+  circle arcs through both poles (level sets of ψ = θN − θS; the branch cut
+  hides under the magnet body, which is a no-go rectangle `barBodyRect`).
+
 ## Run
 
 ```bash
@@ -26,6 +35,7 @@ share one codebase:
 python3 -m http.server 8745
 # straight variant: http://localhost:8745/tool/
 # coil variant:     http://localhost:8745/coil/
+# bar magnet:       http://localhost:8745/bar/
 ```
 
 Use Chrome/Edge (WebGL2 + MediaRecorder). `.claude/launch.json` has
