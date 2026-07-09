@@ -239,10 +239,10 @@ const BAR_UI = {
   fieldArrowColor: '#f8f5ec',
   fieldLineStrength: 2.2,
   fieldLineOpacity: 0.35,
-  fieldMaxRadiusPx: 1650,
-  fieldFirstRadiusPx: 46,     // first arc bulge above/below the magnet
-  fieldRadiusMultiplier: 1.22,
-  fieldLineCount: 16,
+  fieldMaxRadiusPx: 900,
+  fieldFirstRadiusPx: 300,  // inner loop bulge
+  fieldRadiusMultiplier: 1.5,
+  fieldLineCount: 6,        // 3 pole-to-pole loops above + 3 below
   fieldLineThickness: 1.45,
   fieldMotionThickness: 0.65,
   boardShake: 0.72,
@@ -428,8 +428,6 @@ const BAR_VARIANT = {
   // silhouette so filings press into the outline and the occluder covers
   // their tips: they read as physically stuck to the bar, like real filings.
   barBodyRect: [1099, 708, 1657, 820],
-  // The film's own field-line art (extracted from the SVG), in image px.
-  barFieldPaths: BAR_FIELD_PATHS,
   currentOverlay: {},
   currentDirectionText(dir) {
     return dir < 0 ? 'N pole on the RIGHT (field flipped)' : 'N pole on the LEFT';
