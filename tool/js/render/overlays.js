@@ -1101,11 +1101,15 @@ export class Overlays {
     }
     // Return ovals: bore-side edge flows toward A, outer edge back toward B.
     for (let k = 0; k < nOvals; k++) {
-      const inner = boreR * (0.25 + 0.22 * k);
-      const outer = boreR * (2.4 + 1.5 * k);
+      // Strictly nested, never-crossing loops: each successive oval starts
+      // slightly closer to the coil (but always outside the winding, and
+      // outside the straight bore-line band) and reaches further out and
+      // further along the axis, fully containing the previous one.
+      const inner = boreR * (1.7 - 0.2 * k);
+      const outer = boreR * (2.7 + 1.6 * k);
       const semiN = (outer - inner) / 2;
       const cN = (outer + inner) / 2;
-      const semiU = L * (0.62 + 0.16 * k);
+      const semiU = L * (0.60 + 0.20 * k);
       for (const side of [1, -1]) {
         const cx = mx + nx * side * cN, cy = my + ny * side * cN;
         const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(semiN, semiU)) / Math.max(0.0015, pxToM * 8))));
