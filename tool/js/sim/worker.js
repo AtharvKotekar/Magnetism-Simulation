@@ -194,7 +194,15 @@ class VisualEngine {
       const [x, y] = sampleGradientPoint(rng, pattern, p, radius, placed, count, centerBias, attempts);
       attempts++;
       if (!insideSheet(x, y, p, edgeMargin)) continue;
-      if (insideNoGo(x, y, p)) continue;
+      if (insideNoGo(x, y, p)) {
+        // Bar magnet: a share of the filings landing on the bar STICK to it
+        // (spawned as strays — pinned where they fell, drawn on top of the
+        // magnet by the renderer's second pass).
+        if (p.fieldModel === 'barMagnet' && rng.f() < 0.30) {
+          st.spawn(rng, p, placed++, x, y, true);
+        }
+        continue;
+      }
       st.spawn(rng, p, placed++, x, y);
     }
     const responsivePlaced = placed;

@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v12';
-import { SceneLayers } from './render/scene.js?v=coil-v12';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v12';
-import { Overlays } from './render/overlays.js?v=coil-v12';
+import { createGL } from './render/gl.js?v=coil-v14';
+import { SceneLayers } from './render/scene.js?v=coil-v14';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v14';
+import { Overlays } from './render/overlays.js?v=coil-v14';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v12';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v12';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v14';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v14';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v12';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v12';
+import { PRESETS } from './ui/presets.js?v=coil-v14';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v14';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v12';
+import { buildVariantConfig } from './variant.js?v=coil-v14';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v12', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v14', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -304,6 +304,23 @@ function drawFrame(m, {
     else app.filings.drawFilings(o);
   };
 
+  // Bar magnet: redraw the filings clipped to the magnet's screen rect so
+  // the ones stuck ON the bar render above the occluder, like real filings
+  // lying all over the magnet.
+  const drawOnMagnet = () => {
+    const r = app.variant.barBodyRect;
+    if (!r) return;
+    const sx = app.canvas.width / app.scene.W;
+    const sy = app.canvas.height / app.scene.H;
+    const m = 12;
+    const x = (r[0] - m) * sx, y = (r[1] - m) * sy;
+    const w = (r[2] - r[0] + 2 * m) * sx, h = (r[3] - r[1] + 2 * m) * sy;
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(Math.round(x), Math.round(app.canvas.height - y - h), Math.round(w), Math.round(h));
+    drawFilings();
+    gl.disable(gl.SCISSOR_TEST);
+  };
+
   if (alphaOnly) {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -311,6 +328,7 @@ function drawFrame(m, {
     if (o.shadows) app.filings.drawShadows(o);
     drawFilings();
     app.scene.drawOccluderEraser(app.ui.coilTurns ?? 1);
+    drawOnMagnet();
     return;
   }
 
@@ -395,6 +413,7 @@ function drawFrame(m, {
 
   app.scene.setJitter([0, 0]);
   app.scene.drawOccluder(app.ui.coilTurns ?? 1);
+  drawOnMagnet();
 
   const showInd = indicator !== null ? indicator : app.ui.showIndicator;
   if (showInd) {
