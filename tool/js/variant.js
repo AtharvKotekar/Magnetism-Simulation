@@ -152,10 +152,10 @@ export const COIL_PRESETS = [
       strayCount: 2500,
       sprinkleR: 0.190,
       sprinklePattern: 'sheet',
-      sprinkleClump: 0.18,
+      sprinkleClump: 0.35,
     },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.190, clump: 0.18 },
+      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.190, clump: 0.35 },
     ],
   },
   {
@@ -166,7 +166,7 @@ export const COIL_PRESETS = [
     cal: { ...COIL_CALIBRATION },
     params: { fieldModel: 'coilDipole', currentA: 35, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 16000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.18 },
+      { t: 0.2, type: 'sprinkle', count: 16000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
       { t: 1.2, type: 'current', on: true, amp: 35, mode: 'dc', rampDur: 0.5 },
       { t: 2.1, type: 'tapBurst', n: 5, interval: 0.55, strength: 8 },
     ],
@@ -179,7 +179,7 @@ export const COIL_PRESETS = [
     cal: { ...COIL_CALIBRATION },
     params: { fieldModel: 'coilDipole', currentA: 36, currentMode: 'dc' },
     timeline: [
-      { t: 0.2, type: 'sprinkle', count: 16000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.18 },
+      { t: 0.2, type: 'sprinkle', count: 16000, strayCount: 2600, pattern: 'sheet', radius: 0.19, clump: 0.35 },
       { t: 1.2, type: 'current', on: true, amp: 36, mode: 'dc', rampDur: 0.5 },
       { t: 2.0, type: 'tapBurst', n: 4, interval: 0.5, strength: 8 },
       { t: 6.8, type: 'current', on: true, amp: -36, mode: 'dc', rampDur: 0.6 },

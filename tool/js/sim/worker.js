@@ -640,22 +640,24 @@ function sampleGradientPoint(rng, pattern, p, R, i, n, centerBias, attempts = 0)
 }
 
 // Real sprinkling is Poisson: independent random positions, with the natural
-// clumps and voids that brings. A stratified grid (one filing per jittered
-// cell) reads as a woven lattice once thousands of filings are down.
+// clumps and voids that brings — no grid, no sequence, nothing predictable.
+// A centerBias-controlled share of the filings additionally lands in
+// gaussian handfuls around the two legs, like the extra pinches sprinkled
+// near the conductors in the real demo.
 function sampleCoilSheetPoint(rng, p, i, n, centerBias, attempts = 0) {
   const m = p.sprinkleEdgeMargin ?? 0.004;
-  let x = m + rng.f() * (p.sheetW - 2 * m);
-  let y = m + rng.f() * (p.sheetH - 2 * m);
-  const bias = clamp01(centerBias) * rng.f() * rng.f() * 0.34;
-  if (bias > 0.0001) {
+  const clump = clamp01(centerBias);
+  if (clump > 0.001 && rng.f() < clump * 0.55) {
     const { ax, ay, bx, by } = coilPoles(p);
     const towardA = rng.f() < 0.5;
-    const tx = towardA ? ax : bx;
-    const ty = towardA ? ay : by;
-    x = lerp(x, tx, bias);
-    y = lerp(y, ty, bias);
+    const cx = towardA ? ax : bx, cy = towardA ? ay : by;
+    const sigma = 0.020 + 0.032 * rng.f();
+    return [
+      clamp(cx + rng.normal() * sigma, m, p.sheetW - m),
+      clamp(cy + rng.normal() * sigma, m, p.sheetH - m),
+    ];
   }
-  return [x, y];
+  return [m + rng.f() * (p.sheetW - 2 * m), m + rng.f() * (p.sheetH - 2 * m)];
 }
 
 function sampleStrayPoint(rng, p) {
