@@ -869,9 +869,11 @@ export class Overlays {
     const sheetW = opts.sheetW ?? Infinity;
     const sheetH = opts.sheetH ?? Infinity;
     const clipMargin = opts.clipMargin ?? 0.002;
+    const ex = opts.excludeRect;   // magnet body: lines pinch into the poles
     const inside = (px, py) => {
       if (px < clipMargin || py < clipMargin ||
           px > sheetW - clipMargin || py > sheetH - clipMargin) return false;
+      if (ex && px > ex[0] && px < ex[2] && py > ex[1] && py < ex[3]) return false;
       const ra = Math.hypot(px - ax, py - ay);
       const rb = Math.hypot(px - bx, py - by);
       return Math.min(ra, rb) <= rMax;

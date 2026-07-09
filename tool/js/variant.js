@@ -239,7 +239,7 @@ const BAR_UI = {
   fieldArrowColor: '#f8f5ec',
   fieldLineStrength: 2.2,
   fieldLineOpacity: 0.35,
-  fieldMaxRadiusPx: 780,
+  fieldMaxRadiusPx: 640,
   fieldFirstRadiusPx: 300,  // inner loop bulge
   fieldRadiusMultiplier: 1.35,
   fieldLineCount: 6,        // 3 pole-to-pole loops above + 3 below
