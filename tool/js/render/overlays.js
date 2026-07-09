@@ -889,6 +889,34 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
+    if (opts.paths?.length) {
+      // The film's authored field-line art: wind each path against the
+      // field so dash flow (dir=+1, toward decreasing arc) runs N -> S.
+      for (const pts of opts.paths) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        const nxt = pts[Math.min(pts.length - 1, Math.floor(pts.length / 2) + 1)];
+        const da2 = Math.max(1e-9, (mid.x - ax) ** 2 + (mid.y - ay) ** 2);
+        const db2 = Math.max(1e-9, (mid.x - bx) ** 2 + (mid.y - by) ** 2);
+        const hx = (mid.x - ax) / da2 - (mid.x - bx) / db2;
+        const hy = (mid.y - ay) / da2 - (mid.y - by) / db2;
+        const ordered = (nxt.x - mid.x) * hx + (nxt.y - mid.y) * hy > 0 ? [...pts].reverse() : pts;
+        addClipped(ordered);
+      }
+      for (const line of lines) {
+        pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
+        if (arrowDensity > 0 && line.length > 1) {
+          const total = line[line.length - 1].s;
+          for (let s = arrowSpacing * 0.7; s < total - arrowSpacing * 0.35; s += arrowSpacing) {
+            const p = samplePlanePolyline(line, s);
+            if (!p) continue;
+            for (const l of local) arrowVerts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+          }
+        }
+      }
+      this.fieldVectorLines = lines;
+      this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
+      return;
+    }
     // Arc bulges grow with ratio gapRatio, crowding near the magnet.
     const maxBulge = Math.min(rMax, sep * 2.2);
     const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
