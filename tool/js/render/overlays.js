@@ -931,36 +931,28 @@ export class Overlays {
       this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
       return;
     }
-    // Arc bulges grow with ratio gapRatio, crowding near the magnet.
-    const maxBulge = Math.min(rMax, sep * 2.2);
+    // Reference family: pinched ellipses through BOTH poles — flattened
+    // ovals whose top (or bottom) arcs high while the far edge dips behind
+    // the bar between the poles. Sampled theta-ascending, which winds them
+    // so dir=+1 comet flow runs N -> S over the bulge.
     const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
+    const maxBulge = Math.max(firstBulge * 1.2, rMax);
     for (let k = 0; k < perSide; k++) {
       const frac = perSide === 1 ? 0
         : denom > 1e-6 ? (Math.pow(gapRatio, k) - 1) / denom : k / (perSide - 1);
-      const b = firstBulge + (maxBulge - firstBulge) * frac;
-      const h = (sep * sep / 4 - b * b) / (2 * b);   // center offset from axis
-      const R = b + h;
+      const T = firstBulge + (maxBulge - firstBulge) * frac;     // bulge height
+      const Aell = sep / 2 + T * 0.30;                           // reaches past the poles
+      const q = Math.sqrt(Math.max(0, 1 - (sep / 2 / Aell) ** 2));
+      const Bell = T / (1 + q);
+      const h = q * Bell;                                        // center offset off-axis
+      const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(Aell, Bell)) / Math.max(0.0015, pxToM * 8))));
       for (const side of [1, -1]) {
-        const cx = mx - nx * h * side, cy = my - ny * h * side;
-        // angles of S and N around the center; walk the bulge-side arc S → N
-        const aS = Math.atan2(by - cy, bx - cx);
-        const aN = Math.atan2(ay - cy, ax - cx);
-        let sweep = aN - aS;
-        // pick the arc passing the bulge side: its midpoint must lie at
-        // mid + n̂·side·b
-        const norm = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
-        sweep = norm(sweep);
-        const midA = aS + sweep / 2;
-        const midPt = [cx + Math.abs(R) * Math.cos(midA), cy + Math.abs(R) * Math.sin(midA)];
-        const wantX = mx + nx * side * b, wantY = my + ny * side * b;
-        if (Math.hypot(midPt[0] - wantX, midPt[1] - wantY) > Math.abs(b)) {
-          sweep = sweep > 0 ? sweep - 2 * Math.PI : sweep + 2 * Math.PI;
-        }
-        const nSeg = Math.min(2048, Math.max(48, Math.ceil(Math.abs(sweep) * Math.abs(R) / Math.max(0.0015, pxToM * 8))));
+        const cx2 = mx + nx * side * h, cy2 = my + ny * side * h;
         const pts = [];
-        for (let s = 0; s <= nSeg; s++) {
-          const a = aS + sweep * (s / nSeg);
-          pts.push({ x: cx + Math.abs(R) * Math.cos(a), y: cy + Math.abs(R) * Math.sin(a) });
+        for (let sI = 0; sI <= nSeg; sI++) {
+          const th = (sI / nSeg) * Math.PI * 2;
+          const du = Aell * Math.cos(th), dn = Bell * Math.sin(th);
+          pts.push({ x: cx2 + ux * du + nx * side * dn, y: cy2 + uy * du + ny * side * dn });
         }
         addClipped(pts);
       }
