@@ -1022,6 +1022,108 @@ export class Overlays {
     gl.bindVertexArray(null);
   }
 
+
+  // Solenoid: straight field lines threading the bore along the axis plus
+  // nested return ovals on both sides of the coil (classic textbook family).
+  // Winding: dir=+1 comet flow (toward decreasing arc) runs OUT of pole A
+  // (coilLeft pin) through the bore and back around the outside.
+  buildSolenoidFieldLines(poleA, poleB, rMax, opts = {}) {
+    const gl = this.gl;
+    const verts = [];
+    const dashVerts = [];
+    const arrowVerts = [];
+    const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
+    const thickness = Math.max(0.15, opts.thickness ?? 1);
+    const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
+    const arrowSize = Math.max(0.25, opts.arrowSize ?? 1);
+    const bandHalfWidth = Math.max(0.00006, pxToM * 1.55) * thickness;
+    const arrowSpacing = Math.max(32, 250 / Math.max(0.25, arrowDensity));
+    const arrowLen = Math.max(0.0015, pxToM * 24) * arrowSize;
+    const arrowWid = arrowLen * 0.46;
+    this.fieldPxToM = pxToM;
+
+    const ax = poleA[0], ay = poleA[1];
+    const bx = poleB[0], by = poleB[1];
+    const dx = bx - ax, dy = by - ay;
+    const L = Math.max(1e-6, Math.hypot(dx, dy));
+    const ux = dx / L, uy = dy / L;          // axis, A -> B
+    const nx = -uy, ny = ux;                  // perpendicular
+    const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    const boreR = Math.max(1e-4, opts.boreR ?? L * 0.15);
+    const sheetW = opts.sheetW ?? Infinity;
+    const sheetH = opts.sheetH ?? Infinity;
+    const clipMargin = opts.clipMargin ?? 0.002;
+    const inside = (px, py) =>
+      px >= clipMargin && py >= clipMargin &&
+      px <= sheetW - clipMargin && py <= sheetH - clipMargin;
+    const lines = [];
+    const addClipped = (pts) => {
+      let run = [];
+      const flush = () => { if (run.length > 2) lines.push(arcLengthPlane(run, pxToM)); run = []; };
+      for (const p of pts) { if (inside(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+    };
+    const local = [
+      [arrowLen * 0.70, 0],
+      [-arrowLen * 0.55, -arrowWid],
+      [-arrowLen * 0.55, arrowWid],
+    ];
+
+    const total = Math.max(4, Math.round(opts.rings ?? 10));
+    const nStraight = Math.max(3, Math.round(total / 2)) | 1;   // odd
+    const nOvals = Math.max(1, Math.round((total - nStraight) / 2));
+    const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
+    const seg = 220;
+    // Straight bore lines: first point is on the A side (flow destination).
+    for (let i = 0; i < nStraight; i++) {
+      const off = nStraight === 1 ? 0 : ((i / (nStraight - 1)) * 2 - 1) * boreR * 0.72;
+      const pts = [];
+      for (let sIdx = 0; sIdx <= seg; sIdx++) {
+        const t = -reach + (2 * reach * sIdx) / seg;
+        pts.push({ x: mx + ux * t + nx * off, y: my + uy * t + ny * off });
+      }
+      pts.reverse();   // start beyond A (t = -reach side becomes... ensure A-side first)
+      addClipped(pts);
+    }
+    // Return ovals: bore-side edge flows toward A, outer edge back toward B.
+    for (let k = 0; k < nOvals; k++) {
+      const inner = boreR * (0.25 + 0.22 * k);
+      const outer = boreR * (2.4 + 1.5 * k);
+      const semiN = (outer - inner) / 2;
+      const cN = (outer + inner) / 2;
+      const semiU = L * (0.62 + 0.16 * k);
+      for (const side of [1, -1]) {
+        const cx = mx + nx * side * cN, cy = my + ny * side * cN;
+        const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(semiN, semiU)) / Math.max(0.0015, pxToM * 8))));
+        const pts = [];
+        for (let sIdx = 0; sIdx <= nSeg; sIdx++) {
+          const th = (sIdx / nSeg) * Math.PI * 2;
+          const du = semiU * Math.cos(th), dn = semiN * Math.sin(th);
+          pts.push({ x: cx + ux * du + nx * side * dn, y: cy + uy * du + ny * side * dn });
+        }
+        // at the bore-side point (th=3pi/2 => dn=-semiN), array tangent is
+        // d/dth = -semiU*sin(th)*u => +semiU*u at 3pi/2: tangent = +u.
+        // Flow there must be toward A (-u); heads go toward decreasing s,
+        // so the array tangent must be +u. It already is — keep order.
+        addClipped(pts);
+      }
+    }
+
+    for (const line of lines) {
+      pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
+      if (arrowDensity > 0 && line.length > 1) {
+        const tot = line[line.length - 1].s;
+        for (let sA = arrowSpacing * 0.7; sA < tot - arrowSpacing * 0.35; sA += arrowSpacing) {
+          const p = samplePlanePolyline(line, sA);
+          if (!p) continue;
+          for (const l of local) arrowVerts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+        }
+      }
+    }
+    this.fieldVectorLines = lines;
+    this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
+  }
+
   // Reprojection grid for calibration mode: 2 cm grid over the sheet plane.
   buildGrid(sheetW, sheetH, step = 0.02) {
     const gl = this.gl;

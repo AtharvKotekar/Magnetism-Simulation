@@ -121,3 +121,9 @@ re-measure rather than eyeballing.
 ## After code changes
 
 Run `graphify update .` (AST-only, no API cost) to keep `graphify-out/` fresh.
+- **Solenoid** (no filings) — served from `solenoid/`, layers from Solenoid.svg
+  (image0 scene with circuit baked in, image2 full-frame circuit occluder,
+  image1 placeholder mask). Field overlay `fieldOverlay: solenoid` generates
+  straight bore lines + return ovals from the coilLeft/coilRight pole pins
+  and `boreRadiusPx`; the current path traces the whole circuit incl. a
+  20-turn helix. No sprinkle/tap events in its presets.
