@@ -948,18 +948,20 @@ export class Overlays {
       const Bell = T / (1 + q);
       const h = q * Bell;                                        // center offset off-axis
       const nSeg = Math.min(2048, Math.max(96, Math.ceil((2 * Math.PI * Math.max(Aell, Bell)) / Math.max(0.0015, pxToM * 8))));
-      // The far edge (opposite the bulge) exists only to close the loop behind
-      // the bar; compress its off-axis dip so it always stays well inside the
-      // magnet silhouette instead of peeking past its top/bottom paint edge.
-      const dipScale = Math.min(1, (pxToM * 52) / Math.max(1e-9, Bell - h));
       for (const side of [1, -1]) {
         const pts = [];
         for (let sI = 0; sI <= nSeg; sI++) {
-          const th = (sI / nSeg) * Math.PI * 2;
+          // Start at the far apex (3pi/2) so the visible arc is one contiguous
+          // run; ascending theta keeps the winding (dir=+1 flow runs N -> S).
+          const th = Math.PI * 1.5 + (sI / nSeg) * Math.PI * 2;
           const du = Aell * Math.cos(th);
-          let w = h + Bell * Math.sin(th);   // signed off-axis offset (bulge > 0)
-          if (w < 0) w *= dipScale;
-          pts.push({ x: mx + ux * du + nx * side * w, y: my + uy * du + ny * side * w });
+          const w = h + Bell * Math.sin(th);   // signed off-axis offset (bulge > 0)
+          // The far half (w < 0) only closes the loop behind the bar. Cull it
+          // entirely — an ellipse crosses the axis exactly at the two poles,
+          // so the visible arc runs pole to pole and ends at the pole faces,
+          // with no stray fragments hooking around the magnet ends.
+          pts.push(w < 0 ? { x: -1, y: -1 }
+            : { x: mx + ux * du + nx * side * w, y: my + uy * du + ny * side * w });
         }
         addClipped(pts);
       }
