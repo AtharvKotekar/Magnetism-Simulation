@@ -330,9 +330,10 @@ const BAR_VARIANT = {
   calibrationKey: 'bar',
   defaultCalibration: BAR_CALIBRATION,
   fieldOverlay: 'bar',
-  // Magnet body box in image px (from the image2 alpha): filings never
-  // settle underneath the bar.
-  barBodyRect: [1087, 696, 1669, 832],
+  // Magnet no-go box in image px — deliberately ~12 px INSIDE the body
+  // silhouette so filings press into the outline and the occluder covers
+  // their tips: they read as physically stuck to the bar, like real filings.
+  barBodyRect: [1099, 708, 1657, 820],
   currentOverlay: {},
   currentDirectionText(dir) {
     return dir < 0 ? 'N pole on the RIGHT (field flipped)' : 'N pole on the LEFT';
