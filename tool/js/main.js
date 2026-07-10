@@ -4,19 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v39';
-import { SceneLayers } from './render/scene.js?v=coil-v39';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v39';
-import { Overlays } from './render/overlays.js?v=coil-v39';
+import { createGL } from './render/gl.js?v=coil-v40';
+import { SceneLayers } from './render/scene.js?v=coil-v40';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v40';
+import { Overlays } from './render/overlays.js?v=coil-v40';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v39';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v39';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v40';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v40';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v39';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v39';
+import { PRESETS } from './ui/presets.js?v=coil-v40';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v40';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v39';
+import { buildVariantConfig } from './variant.js?v=coil-v40';
+import { CompassOverlay } from './render/compass.js?v=coil-v40';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -50,12 +51,17 @@ async function boot() {
   app.filings = new FilingRenderer(gl, app.params.maxParticles);
   app.overlays = new Overlays(gl);
   app.overlays.buildGrid(app.cal.sheetW, app.cal.sheetH);
+  if (app.variant.compass) {
+    app.compass = new CompassOverlay(gl, app.variant.compass.assetsBase);
+    await app.compass.load();
+    bindCompassDrag();
+  }
   rebuildCurrentOverlay();
 
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v39', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v40', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -432,6 +438,19 @@ function drawFrame(m, {
     }
   }
 
+  // Compass prop: on the paper above the filings, under the wire occluder
+  // so the wire stays in front when they overlap.
+  if (app.compass && app.ui.showCompass) {
+    ensureCompassPos();
+    app.compass.draw({
+      homog: app.homog,
+      res: o.res,
+      center: [app.ui.compassX, app.ui.compassY],
+      size: app.ui.compassSize,
+      angle: compassNeedleAngle(m),
+    });
+  }
+
   app.scene.setJitter([0, 0]);
   app.scene.drawOccluder(app.ui.coilTurns ?? 1);
   drawOnMagnet();
@@ -488,6 +507,77 @@ function drawFrame(m, {
   }
 }
 app.drawFrame = (snap, opts) => drawFrame(snap, opts);
+
+// ---------- compass prop ----------
+
+function ensureCompassPos() {
+  if (app.ui.compassX != null && app.ui.compassY != null) return;
+  // first show: on the paper to the lower-right of the wire
+  app.ui.compassX = Math.min(app.cal.sheetW - 0.05, app.holePlane[0] + 0.085);
+  app.ui.compassY = Math.min(app.cal.sheetH - 0.05, app.holePlane[1] + 0.035);
+}
+
+// Needle heading as a PURE function of (position, signed current) — no
+// history, so identical takes render identical frames. The needle settles
+// along the net in-plane field: Earth's field (fixed, pointing to the top
+// of the paper, magnitude 1) plus the wire's tangent field, whose strength
+// is `compassSensitivity` Earth-fields at 5 cm and 30 A and falls off 1/r.
+function compassNeedleAngle(m) {
+  const dx = app.ui.compassX - app.holePlane[0];
+  const dy = app.ui.compassY - app.holePlane[1];
+  const r = Math.max(0.012, Math.hypot(dx, dy));
+  const I = m?.current ?? 0;
+  const k = (app.ui.compassSensitivity ?? 3) * (0.05 / r) * (I / 30);
+  // right-hand rule: current UP through the hole (dir=+1) curls the field
+  // counterclockwise seen from above = tangent (dy, -dx) in y-down coords
+  const bx = k * (dy / r);
+  const by = k * (-dx / r) - 1;                // Earth north = -y (paper top)
+  return Math.atan2(bx, -by);                  // 0 = north, clockwise-positive
+}
+
+function bindCompassDrag() {
+  const cv = app.canvas;
+  const toImagePx = (e) => {
+    const rect = cv.getBoundingClientRect();
+    return [
+      ((e.clientX - rect.left) / rect.width) * app.scene.W,
+      ((e.clientY - rect.top) / rect.height) * app.scene.H,
+    ];
+  };
+  const hit = (e) => {
+    if (!app.ui.showCompass || app.ui.compassX == null || !app.homog) return false;
+    const p = toImagePx(e);
+    const c = app.homog.toImage(app.ui.compassX, app.ui.compassY);
+    const edge = app.homog.toImage(app.ui.compassX + app.ui.compassSize / 2, app.ui.compassY);
+    const rPx = Math.hypot(edge[0] - c[0], edge[1] - c[1]);
+    return Math.hypot(p[0] - c[0], p[1] - c[1]) <= rPx * 1.05;
+  };
+  let dragging = false;
+  cv.addEventListener('pointerdown', (e) => {
+    if (!hit(e)) return;
+    dragging = true;
+    cv.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!dragging) {
+      cv.style.cursor = hit(e) ? 'grab' : '';
+      return;
+    }
+    const p = toImagePx(e);
+    const q = app.homog.toPlane(p[0], p[1]);
+    const half = app.ui.compassSize / 2;
+    app.ui.compassX = Math.min(app.cal.sheetW - half * 0.6, Math.max(half * 0.6, q[0]));
+    app.ui.compassY = Math.min(app.cal.sheetH - half * 0.6, Math.max(half * 0.6, q[1]));
+  });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    cv.releasePointerCapture?.(e.pointerId);
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+}
 
 // ---------- stats / diagnostics ----------
 

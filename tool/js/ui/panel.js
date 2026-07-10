@@ -330,6 +330,26 @@ export function buildPanel(root, app) {
     });
   }
 
+  // ---------- COMPASS ----------
+  if (app.variant?.compass) {
+    const b = S('COMPASS');
+    check(b, 'Show compass', app.ui.showCompass, (v) => { app.ui.showCompass = v; });
+    slider(b, 'Size', 0.03, 0.11, 0.001, app.ui.compassSize, ' m', (v) => {
+      app.ui.compassSize = v;
+    });
+    slider(b, 'Needle sensitivity', 0.2, 8, 0.1, app.ui.compassSensitivity, '×', (v) => {
+      app.ui.compassSensitivity = v;
+    });
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = 'Drag the compass across the board — the needle follows the net field (Earth + wire) and snaps to the rings near the conductor.';
+    b.appendChild(hint);
+    const reset = document.createElement('button');
+    reset.textContent = '⌖ Reset position';
+    reset.onclick = () => { app.ui.compassX = null; app.ui.compassY = null; };
+    b.appendChild(reset);
+  }
+
   // ---------- VIEW ----------
   {
     const b = S('VIEW', false);

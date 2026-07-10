@@ -42,6 +42,9 @@ const STRAIGHT_VARIANT = {
   },
   calibrationKey: 'straight',
   fieldOverlay: 'wire',
+  // Compass prop: draggable on the cardboard, needle deflects with the net
+  // in-plane field (Earth north + wire tangent) — the Oersted demo.
+  compass: { assetsBase: 'assets/' },
   currentOverlay: {},
   currentDirectionText(dir) {
     return dir < 0 ? '⬇ current flows DOWN through hole' : '⬆ current flows UP through hole';

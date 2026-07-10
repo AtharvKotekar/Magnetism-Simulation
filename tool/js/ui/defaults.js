@@ -58,6 +58,14 @@ export const DEFAULT_UI = {
   liftScale: 2.00,
   tapVibration: true,
   boardShake: 0.90,
+  // Compass prop (straight-wire stage): position in plane meters (null =
+  // auto-place beside the wire on load), body diameter in meters, and how
+  // strongly the wire field reads against Earth's (needle sensitivity).
+  showCompass: true,
+  compassX: null,
+  compassY: null,
+  compassSize: 0.056,
+  compassSensitivity: 3.0,
   recFormat: 'mp4',
   recFps: 24,
   recQuality: 'ultra',
