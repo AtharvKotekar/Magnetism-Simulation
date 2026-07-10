@@ -4,7 +4,7 @@
 // models (tool/assets/compass-*.png), all dial-centered so the needle
 // pivots exactly on the rose hub. Each layer is a homography-warped quad,
 // so the prop sits in the board's perspective like set dressing.
-import { compileProgram, loadTexture } from './gl.js?v=coil-v42';
+import { compileProgram, loadTexture } from './gl.js?v=coil-v43';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aPos;   // keyframe image px
@@ -56,11 +56,15 @@ export class CompassOverlay {
 
   async load() {
     const gl = this.gl;
+    // The ?v tag matters: sprite CONTENT changes between deploys while the
+    // filenames stay the same, so without it browsers keep serving stale
+    // cached PNGs long after the code updates (Pages caches for 10 min).
+    const tag = '?v=coil-v43';
     const [body, needle, mount, shadow] = await Promise.all([
-      loadTexture(gl, this.base + 'compass-body.png'),     // case + dial
-      loadTexture(gl, this.base + 'compass-needle.png'),   // needle alone
-      loadTexture(gl, this.base + 'compass-mount.png'),    // pivot cap + glass
-      loadTexture(gl, this.base + 'compass-shadow.png'),
+      loadTexture(gl, this.base + 'compass-body.png' + tag),     // case + dial
+      loadTexture(gl, this.base + 'compass-needle.png' + tag),   // needle alone
+      loadTexture(gl, this.base + 'compass-mount.png' + tag),    // pivot cap + glass
+      loadTexture(gl, this.base + 'compass-shadow.png' + tag),
     ]);
     this.body = body; this.needle = needle; this.mount = mount; this.shadow = shadow;
     this.ready = true;
