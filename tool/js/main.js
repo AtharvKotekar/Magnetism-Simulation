@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v44';
-import { SceneLayers } from './render/scene.js?v=coil-v44';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v44';
-import { Overlays } from './render/overlays.js?v=coil-v44';
+import { createGL } from './render/gl.js?v=coil-v45';
+import { SceneLayers } from './render/scene.js?v=coil-v45';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v45';
+import { Overlays } from './render/overlays.js?v=coil-v45';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v44';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v44';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v45';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v45';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v44';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v44';
+import { PRESETS } from './ui/presets.js?v=coil-v45';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v45';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v44';
-import { CompassOverlay } from './render/compass.js?v=coil-v44';
+import { buildVariantConfig } from './variant.js?v=coil-v45';
+import { CompassOverlay } from './render/compass.js?v=coil-v45';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v44', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v45', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -541,7 +541,18 @@ app.setCompassOrbitRadius = (R) => {
 app.liveCompassOrbit = (dur) => {
   const p = app.compassPolar();
   if (p.R < 0.02) return;                       // on the wire: nothing to orbit
-  compassOrbit = { t0: null, dur: Math.max(1, dur ?? app.ui.compassOrbitDur), R: p.R, th0: p.th };
+  // travel WITH the field: B tangent is (dy,-dx)*sign(I) (right-hand rule),
+  // and theta-increasing motion is (-dy,dx), so sweep = -sign(I) * 2pi
+  const I = lastFrameData?.current ?? 0;
+  const sig = Math.abs(I) > 0.001 ? Math.sign(I)
+    : (app.params.currentDir || 1);
+  compassOrbit = {
+    t0: null,
+    dur: Math.max(1, dur ?? app.ui.compassOrbitDur),
+    R: p.R,
+    th0: p.th,
+    sweep: -sig * Math.PI * 2,
+  };
 };
 app.cancelCompassOrbit = () => { compassOrbit = null; };
 
@@ -550,7 +561,7 @@ function compassOrbitFollow(m) {
   if (compassOrbit.t0 == null || m.time < compassOrbit.t0) compassOrbit.t0 = m.time;
   const p = Math.min(1, (m.time - compassOrbit.t0) / compassOrbit.dur);
   const e = p * p * (3 - 2 * p);                // smoothstep ease in/out
-  const th = compassOrbit.th0 + e * Math.PI * 2;
+  const th = compassOrbit.th0 + e * (compassOrbit.sweep ?? Math.PI * 2);
   app.ui.compassX = app.holePlane[0] + compassOrbit.R * Math.cos(th);
   app.ui.compassY = app.holePlane[1] + compassOrbit.R * Math.sin(th);
   if (p >= 1) compassOrbit = null;
