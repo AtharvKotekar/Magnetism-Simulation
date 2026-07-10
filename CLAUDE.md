@@ -7,7 +7,14 @@ share one codebase:
 
 - **Straight wire** (Oersted shot) — served from `tool/`, keyframe
   `Assets/BASE.svg` (layers extracted to `tool/assets/` by
-  `tool/extract_assets.py`).
+  `tool/extract_assets.py`). Has a draggable **compass prop**
+  (`tool/js/render/compass.js` + `tool/assets/compass-{body,needle,shadow}.png`,
+  sprites baked offline from the user's 3D OBJs, dial-centered so the
+  needle pivots on the rose hub). Needle heading is a PURE function of
+  (position, signed current): Earth field (north = paper top, magnitude 1)
+  + wire tangent field by the right-hand rule (`compassSensitivity` Earth
+  units at 5 cm / 30 A, 1/r falloff) — keep it stateless or takes lose
+  determinism. Drawn above filings, below the wire occluder.
 - **Coil** (loop through the board) — served from `coil/`, keyframe layers in
   `coil/assets/`, activated by `window.MAGNETISM_VARIANT = 'coil'` and
   configured in `tool/js/variant.js`. `image0-rev.png` is the same keyframe
