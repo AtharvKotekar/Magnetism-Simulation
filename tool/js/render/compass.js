@@ -4,7 +4,7 @@
 // models (tool/assets/compass-*.png), all dial-centered so the needle
 // pivots exactly on the rose hub. Each layer is a homography-warped quad,
 // so the prop sits in the board's perspective like set dressing.
-import { compileProgram, loadTexture } from './gl.js?v=coil-v41';
+import { compileProgram, loadTexture } from './gl.js?v=coil-v42';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aPos;   // keyframe image px
@@ -28,9 +28,10 @@ void main() {
   frag = vec4(c.rgb * uTint.rgb, c.a) * uTint.a;
 }`;
 
-// needle sprite length relative to the body sprite canvas — sized so the
-// needle tips stay just inside the dial ring
-const NEEDLE_SCALE = 0.60;
+// All sprites come from the film's Compass.svg layers, composited on one
+// shared canvas with the pivot at the center — so every layer draws at the
+// SAME quad size and stays registered.
+const NEEDLE_SCALE = 1.0;
 
 export class CompassOverlay {
   constructor(gl, assetsBase = 'assets/') {
@@ -56,9 +57,9 @@ export class CompassOverlay {
   async load() {
     const gl = this.gl;
     const [body, needle, mount, shadow] = await Promise.all([
-      loadTexture(gl, this.base + 'compass-body.png'),
-      loadTexture(gl, this.base + 'compass-needle.png'),   // blade only
-      loadTexture(gl, this.base + 'compass-mount.png'),    // static pivot bar
+      loadTexture(gl, this.base + 'compass-body.png'),     // case + dial
+      loadTexture(gl, this.base + 'compass-needle.png'),   // needle alone
+      loadTexture(gl, this.base + 'compass-mount.png'),    // pivot cap + glass
       loadTexture(gl, this.base + 'compass-shadow.png'),
     ]);
     this.body = body; this.needle = needle; this.mount = mount; this.shadow = shadow;
@@ -105,12 +106,12 @@ export class CompassOverlay {
     // drop shadow, cast down-right like the keyframe's light
     this.drawQuad(this.shadow, homog, res,
       center[0] + size * 0.045, center[1] + size * 0.075, half, 0, [1, 1, 1, 1]);
+    // dial stays fixed; the needle (and its cast shadow) rotates; the pivot
+    // cap and the glass sheen sit STATIC above everything.
     this.drawQuad(this.body, homog, res, center[0], center[1], half, 0, [1, 1, 1, 1]);
-    // pivot mount stays FIXED on the dial; only the blade turns. The blade
-    // shadow draws over the mount, since the blade sits above it.
-    this.drawQuad(this.mount, homog, res, center[0], center[1], nHalf, 0, [1, 1, 1, 1]);
     this.drawQuad(this.needle, homog, res,
-      center[0] + size * 0.012, center[1] + size * 0.020, nHalf, angle, [0, 0, 0, 0.35]);
+      center[0] + size * 0.010, center[1] + size * 0.016, nHalf, angle, [0, 0, 0, 0.30]);
     this.drawQuad(this.needle, homog, res, center[0], center[1], nHalf, angle, [1, 1, 1, 1]);
+    this.drawQuad(this.mount, homog, res, center[0], center[1], nHalf, 0, [1, 1, 1, 1]);
   }
 }
