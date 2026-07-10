@@ -4,7 +4,7 @@
 // models (tool/assets/compass-*.png), all dial-centered so the needle
 // pivots exactly on the rose hub. Each layer is a homography-warped quad,
 // so the prop sits in the board's perspective like set dressing.
-import { compileProgram, loadTexture } from './gl.js?v=coil-v40';
+import { compileProgram, loadTexture } from './gl.js?v=coil-v41';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 aPos;   // keyframe image px
@@ -55,12 +55,13 @@ export class CompassOverlay {
 
   async load() {
     const gl = this.gl;
-    const [body, needle, shadow] = await Promise.all([
+    const [body, needle, mount, shadow] = await Promise.all([
       loadTexture(gl, this.base + 'compass-body.png'),
-      loadTexture(gl, this.base + 'compass-needle.png'),
+      loadTexture(gl, this.base + 'compass-needle.png'),   // blade only
+      loadTexture(gl, this.base + 'compass-mount.png'),    // static pivot bar
       loadTexture(gl, this.base + 'compass-shadow.png'),
     ]);
-    this.body = body; this.needle = needle; this.shadow = shadow;
+    this.body = body; this.needle = needle; this.mount = mount; this.shadow = shadow;
     this.ready = true;
   }
 
@@ -105,7 +106,9 @@ export class CompassOverlay {
     this.drawQuad(this.shadow, homog, res,
       center[0] + size * 0.045, center[1] + size * 0.075, half, 0, [1, 1, 1, 1]);
     this.drawQuad(this.body, homog, res, center[0], center[1], half, 0, [1, 1, 1, 1]);
-    // needle shadow on the dial, then the needle itself
+    // pivot mount stays FIXED on the dial; only the blade turns. The blade
+    // shadow draws over the mount, since the blade sits above it.
+    this.drawQuad(this.mount, homog, res, center[0], center[1], nHalf, 0, [1, 1, 1, 1]);
     this.drawQuad(this.needle, homog, res,
       center[0] + size * 0.012, center[1] + size * 0.020, nHalf, angle, [0, 0, 0, 0.35]);
     this.drawQuad(this.needle, homog, res, center[0], center[1], nHalf, angle, [1, 1, 1, 1]);
