@@ -340,9 +340,21 @@ export function buildPanel(root, app) {
     slider(b, 'Needle sensitivity', 0.2, 8, 0.1, app.ui.compassSensitivity, '×', (v) => {
       app.ui.compassSensitivity = v;
     });
+    slider(b, 'Orbit radius', 0.03, 0.17, 0.001,
+      app.compassPolar ? app.compassPolar().R : 0.09, ' m', (v) => {
+        app.setCompassOrbitRadius(v);
+      });
+    slider(b, 'Orbit time', 2, 24, 0.5, app.ui.compassOrbitDur, ' s', (v) => {
+      app.ui.compassOrbitDur = v;
+    });
+    const orbitBtn = document.createElement('button');
+    orbitBtn.textContent = '⟳ Orbit once around the wire';
+    orbitBtn.title = 'One smooth full revolution on the invisible circular track — the needle rides the field the whole way.';
+    orbitBtn.onclick = () => app.liveCompassOrbit(app.ui.compassOrbitDur);
+    b.appendChild(orbitBtn);
     const hint = document.createElement('div');
     hint.className = 'hint';
-    hint.textContent = 'Drag the compass across the board — the needle follows the net field (Earth + wire) and snaps to the rings near the conductor.';
+    hint.textContent = 'Drag the compass anywhere — dragging also sets the orbit circle. Orbit radius moves it closer to or farther from the conductor.';
     b.appendChild(hint);
     const reset = document.createElement('button');
     reset.textContent = '⌖ Reset position';

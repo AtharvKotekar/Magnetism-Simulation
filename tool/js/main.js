@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v43';
-import { SceneLayers } from './render/scene.js?v=coil-v43';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v43';
-import { Overlays } from './render/overlays.js?v=coil-v43';
+import { createGL } from './render/gl.js?v=coil-v44';
+import { SceneLayers } from './render/scene.js?v=coil-v44';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v44';
+import { Overlays } from './render/overlays.js?v=coil-v44';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v43';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v43';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v44';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v44';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v43';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v43';
+import { PRESETS } from './ui/presets.js?v=coil-v44';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v44';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v43';
-import { CompassOverlay } from './render/compass.js?v=coil-v43';
+import { buildVariantConfig } from './variant.js?v=coil-v44';
+import { CompassOverlay } from './render/compass.js?v=coil-v44';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v43', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v44', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -130,6 +130,7 @@ function handleFrame(m) {
   app.stats.awake = m.awake;
   lastFrameData = m;
   surgeFollow(m.current);
+  compassOrbitFollow(m);
 }
 
 // ---------- interactive loop ----------
@@ -517,6 +518,44 @@ function ensureCompassPos() {
   app.ui.compassY = Math.min(app.cal.sheetH - 0.05, app.holePlane[1] + 0.035);
 }
 
+// ---- orbit: one smooth revolution around the conductor on an invisible
+// circular track. Driven by SIM time (not wall clock) so recorded takes
+// stay deterministic; eased with smoothstep so it starts and stops softly.
+let compassOrbit = null;
+
+app.compassPolar = () => {
+  ensureCompassPos();
+  const dx = app.ui.compassX - app.holePlane[0];
+  const dy = app.ui.compassY - app.holePlane[1];
+  return { R: Math.hypot(dx, dy), th: Math.atan2(dy, dx) };
+};
+
+app.setCompassOrbitRadius = (R) => {
+  const p = app.compassPolar();
+  const th = p.R < 1e-6 ? 0 : p.th;
+  app.ui.compassX = app.holePlane[0] + R * Math.cos(th);
+  app.ui.compassY = app.holePlane[1] + R * Math.sin(th);
+  if (compassOrbit) compassOrbit.R = R;
+};
+
+app.liveCompassOrbit = (dur) => {
+  const p = app.compassPolar();
+  if (p.R < 0.02) return;                       // on the wire: nothing to orbit
+  compassOrbit = { t0: null, dur: Math.max(1, dur ?? app.ui.compassOrbitDur), R: p.R, th0: p.th };
+};
+app.cancelCompassOrbit = () => { compassOrbit = null; };
+
+function compassOrbitFollow(m) {
+  if (!compassOrbit || !app.holePlane) return;
+  if (compassOrbit.t0 == null || m.time < compassOrbit.t0) compassOrbit.t0 = m.time;
+  const p = Math.min(1, (m.time - compassOrbit.t0) / compassOrbit.dur);
+  const e = p * p * (3 - 2 * p);                // smoothstep ease in/out
+  const th = compassOrbit.th0 + e * Math.PI * 2;
+  app.ui.compassX = app.holePlane[0] + compassOrbit.R * Math.cos(th);
+  app.ui.compassY = app.holePlane[1] + compassOrbit.R * Math.sin(th);
+  if (p >= 1) compassOrbit = null;
+}
+
 // Needle heading as a PURE function of (position, signed current) — no
 // history, so identical takes render identical frames. The needle settles
 // along the net in-plane field: Earth's field (fixed, pointing to the top
@@ -556,6 +595,7 @@ function bindCompassDrag() {
   cv.addEventListener('pointerdown', (e) => {
     if (!hit(e)) return;
     dragging = true;
+    app.cancelCompassOrbit();                   // hand takes over from the orbit
     cv.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
