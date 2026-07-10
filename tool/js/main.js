@@ -4,19 +4,19 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v38';
-import { SceneLayers } from './render/scene.js?v=coil-v38';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v38';
-import { Overlays } from './render/overlays.js?v=coil-v38';
+import { createGL } from './render/gl.js?v=coil-v39';
+import { SceneLayers } from './render/scene.js?v=coil-v39';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v39';
+import { Overlays } from './render/overlays.js?v=coil-v39';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v38';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v38';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v39';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v39';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v38';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v38';
+import { PRESETS } from './ui/presets.js?v=coil-v39';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v39';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v38';
+import { buildVariantConfig } from './variant.js?v=coil-v39';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -55,7 +55,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v38', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v39', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();

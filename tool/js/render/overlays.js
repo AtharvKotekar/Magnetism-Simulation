@@ -1069,71 +1069,84 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Textbook solenoid family (see any physics reference): CLOSED loops
-    // that run straight through the bore, exit an end, balloon around the
-    // side, and re-enter the other end — plus a few OPEN lines fanning out
-    // of the ends near the axis. Loops are nested and never cross.
+    // Textbook solenoid family: closed return loops through the bore plus
+    // open lines fanning out of the mouths. Every curve is C-infinity by
+    // construction — the loops are superellipses in the axis frame (one
+    // smooth closed equation, no straight-segment + ellipse-cap joints,
+    // which is what made the old family read as a wobbly rounded box), and
+    // the fans flare with a cubic ramp instead of kinking into a straight
+    // ray at the mouth.
     const Lh = L / 2;
-    const nLoops = 2;                    // per side
-    const nSegPer = Math.max(24, Math.round((opts.segments ?? 96) / 2));
-    const halfEllipse = (cx2, cy2, semiA, semiB, a0, a1, ux2, uy2, nx2, ny2) => {
-      const pts = [];
-      for (let i = 0; i <= nSegPer; i++) {
-        const th = a0 + (a1 - a0) * (i / nSegPer);
-        const du = semiA * Math.cos(th), dn = semiB * Math.sin(th);
-        pts.push({ x: cx2 + ux2 * du + nx2 * dn, y: cy2 + uy2 * du + ny2 * dn });
-      }
-      return pts;
-    };
-    for (let k = 0; k < nLoops; k++) {
-      const dIn = boreR * (0.30 + 0.28 * k);        // interior offset
-      const Rk = boreR * (2.3 + 1.7 * k);           // outer return distance
-      const Ek = boreR * (0.9 + 0.5 * k);           // end-cap axial reach
+    // The closed return loops are LEVEL SETS of one smooth stream function
+    //   psi(U, n) = h(n) * w(U),   h = n*exp(-(n/na)^al)  (peak at the
+    //   winding column),           w = exp(-(|U|/S)^tm)   (axial window)
+    // traced with unit-speed RK4 along rot90(grad psi). Level sets of one
+    // C-infinity function cannot cross and nest around the winding, so the
+    // family is smooth and collision-free BY CONSTRUCTION. The na/al/S/tm
+    // values are fitted so the bore offsets, return distances and cap reach
+    // match the approved composition (bores 0.30/0.58 boreR, returns
+    // ~2.5/3.9 boreR, tips ~0.9/1.6 boreR past the poles). Hand-stitched
+    // parametric loops (straight run + ellipse caps, or offset curves)
+    // either read boxy or graze each other at the mouths — don't go back.
+    const na = 0.61 * boreR, al = 0.63;
+    const Sw = 5.491 * boreR, tm = 7.51;
+    const hFn = (n) => n * Math.exp(-Math.pow(n / na, al));
+    const hpFn = (n) => Math.exp(-Math.pow(n / na, al)) * (1 - al * Math.pow(n / na, al));
+    const wFn = (U) => Math.exp(-Math.pow(Math.abs(U) / Sw, tm));
+    const wpFn = (U) => (U === 0 ? 0
+      : -wFn(U) * (tm / Sw) * Math.pow(Math.abs(U) / Sw, tm - 1) * Math.sign(U));
+    const step = pxToM * 4;
+    for (const bore of [0.30, 0.58]) {
       for (const side of [1, -1]) {
-        const nS = { x: nx * side, y: ny * side };
-        const pts = [];
-        // interior: A end -> B end at n = dIn
-        for (let i = 0; i <= nSegPer; i++) {
-          const t = -Lh + (2 * Lh) * (i / nSegPer);
-          pts.push({ x: mx + ux * t + nS.x * dIn, y: my + uy * t + nS.y * dIn });
+        // trace in the local (U, n>0) frame, mirror by `side` on emit
+        let U = 0, n = bore * boreR;
+        const seedU = U, seedN = n;
+        // tangent = rot90(grad psi); start with dU > 0 so the bore branch
+        // is wound A -> B — the dash shader then flows B -> A for dir=+1,
+        // the approved direction (matches the open fan lines below).
+        let tU = -hpFn(n) * wFn(U), tN = hFn(n) * wpFn(U);
+        if (tU < 0) { tU = -tU; tN = -tN; }
+        const pts = [{ u: U, n }];
+        for (let i = 0; i < 9000; i++) {
+          const dirAt = (u_, n_) => {
+            let du = -hpFn(n_) * wFn(u_), dn = hFn(n_) * wpFn(u_);
+            if (du * tU + dn * tN < 0) { du = -du; dn = -dn; }
+            const m = Math.max(1e-15, Math.hypot(du, dn));
+            return [du / m, dn / m];
+          };
+          const k1 = dirAt(U, n);
+          const k2 = dirAt(U + (k1[0] * step) / 2, n + (k1[1] * step) / 2);
+          const k3 = dirAt(U + (k2[0] * step) / 2, n + (k2[1] * step) / 2);
+          const k4 = dirAt(U + k3[0] * step, n + k3[1] * step);
+          const dU = (step / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+          const dN = (step / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+          U += dU; n += dN; tU = dU; tN = dN;
+          pts.push({ u: U, n });
+          if (i > 24 && Math.hypot(U - seedU, n - seedN) < step * 1.4) {
+            pts.push({ u: seedU, n: seedN });   // clean closure
+            break;
+          }
         }
-        // B-end cap: swing from dIn out to Rk (half ellipse, bulging past B)
-        const capC = (dIn + Rk) / 2, capS = (Rk - dIn) / 2;
-        pts.push(...halfEllipse(mx + ux * Lh, my + uy * Lh, Ek, capS,
-          -Math.PI / 2, Math.PI / 2, ux, uy, nS.x, nS.y).map(p =>
-          ({ x: p.x + nS.x * capC, y: p.y + nS.y * capC })));
-        // outer return: B -> A at ~Rk with a gentle outward bulge
-        for (let i = 1; i < nSegPer; i++) {
-          const t = Lh - (2 * Lh) * (i / nSegPer);
-          const bulge = Rk + boreR * 0.35 * Math.sin(Math.PI * (i / nSegPer));
-          pts.push({ x: mx + ux * t + nS.x * bulge, y: my + uy * t + nS.y * bulge });
-        }
-        // A-end cap: back in from Rk to dIn
-        pts.push(...halfEllipse(mx - ux * Lh, my - uy * Lh, Ek, capS,
-          Math.PI / 2, (3 * Math.PI) / 2, ux, uy, nS.x, nS.y).map(p =>
-          ({ x: p.x + nS.x * capC, y: p.y + nS.y * capC })));
-        pts.push({ ...pts[0] });
-        addClipped(pts);
+        addClipped(pts.map((p) => ({
+          x: mx + ux * p.u + nx * side * p.n,
+          y: my + uy * p.u + ny * side * p.n,
+        })));
       }
     }
-    // open lines near the axis: through the bore, fanning out past the ends
+    // open lines near the axis: straight through the bore, then flaring out
+    // of the mouths with a C2 cubic ramp (no angle break at the pole plane)
     const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
-    const fans = [[0, 0], [boreR * 0.14, 0.20], [-boreR * 0.14, -0.20]];
-    for (const [off, ang] of fans) {
+    const flareAmp = boreR * 0.66;        // lateral drift after one flareRef
+    const flareRef = boreR * 3.9;         // axial distance scale of the flare
+    const fanStep = pxToM * 4;
+    for (const off of [0, boreR * 0.14, -boreR * 0.14]) {
       const pts = [];
-      const dirA = { x: -ux * Math.cos(ang) + nx * Math.sin(ang), y: -uy * Math.cos(ang) + ny * Math.sin(ang) };
-      const dirB = { x: ux * Math.cos(ang) + nx * Math.sin(ang), y: uy * Math.cos(ang) + ny * Math.sin(ang) };
-      for (let i = nSegPer; i >= 1; i--) {   // beyond A, far tip first
-        const t = (i / nSegPer) * reach;
-        pts.push({ x: mx - ux * Lh + nx * off + dirA.x * t, y: my - uy * Lh + ny * off + dirA.y * t });
-      }
-      for (let i = 0; i <= nSegPer; i++) {   // through the bore
-        const t = -Lh + (2 * Lh) * (i / nSegPer);
-        pts.push({ x: mx + ux * t + nx * off, y: my + uy * t + ny * off });
-      }
-      for (let i = 1; i <= nSegPer; i++) {   // beyond B
-        const t = (i / nSegPer) * reach;
-        pts.push({ x: mx + ux * Lh + nx * off + dirB.x * t, y: my + uy * Lh + ny * off + dirB.y * t });
+      const nFan = Math.ceil((2 * (Lh + reach)) / fanStep);
+      for (let i = 0; i <= nFan; i++) {
+        const t = -Lh - reach + (2 * (Lh + reach)) * (i / nFan);   // A -> B
+        const over = Math.max(0, Math.abs(t) - Lh) / flareRef;
+        const n = off + Math.sign(off) * flareAmp * over * over * over;
+        pts.push({ x: mx + ux * t + nx * n, y: my + uy * t + ny * n });
       }
       addClipped(pts);
     }
