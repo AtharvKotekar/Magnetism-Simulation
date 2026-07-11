@@ -249,6 +249,74 @@ export const COIL_PRESETS = [
     ],
   },
   {
+    // Bare-board turns take: NO sprinkle and NO taps — just the conductor
+    // and its field lines. Load (1 coil, 9 rings, 80 A held), record, then
+    // press ➕ Add coil: the 2-coil bundle appears and the rings bloom
+    // 9 → 22; press again for 3 coils and 22 → 36. More turns = stronger
+    // field, told purely with the overlay.
+    name: 'Coil turns stage 1→3 coils',
+    hint: 'Clear board, 80 A. Press ➕ Add coil to step 1→2→3 turns — rings bloom 9→22→36, no sprinkle, no tap.',
+    duration: 20,
+    ui: {
+      ...COIL_UI,
+      currentOn: true,
+      fieldLineCount: 9,
+      fieldRadiusMultiplier: 1.08,
+      fieldFirstRadiusPx: 64,
+      fieldMaxRadiusPx: 1520,
+      fieldFalloffCurve: 1.0,
+      fieldLineStrength: 2.2,
+      fieldLineOpacity: 0.35,
+      fieldLineThickness: 1.45,
+      fieldLineDetail: 88,
+      fieldMotionStrength: 1.25,
+      fieldMotionSpeed: 1.0,
+      fieldMotionSpacing: 170,
+      currentIndicatorStrength: 0.6,
+      currentPulseSpeed: 1.0,
+      currentPulseSpacing: 140,
+      currentTrackWidth: 12,
+      coilTurns: 1,
+      boardShake: 0.72,
+      liftScale: 2.0,
+    },
+    cal: { ...COIL_CALIBRATION, holeWallR: 0.006 },
+    params: {
+      fieldModel: 'coilDipole',
+      currentA: 80,
+      currentMode: 'dc',
+      acFreq: 5,
+      rampDur: 0.4,
+      currentDir: 1,
+      currentAutoAlign: false,
+      currentMotion: 0.58,
+      fieldReach30A: 0.480,
+      fieldReferenceR: 0.050,
+      fieldFalloffPower: 1.05,
+      fieldMinResponse: 0.004,
+      chainSpacing: 0.0032,
+      chainStrength: 2.0,
+      chainCapture: 0.90,
+      inwardPull: 0.008,
+      pullRadius: 0.150,
+      axisPull: 0.002,
+      visualFriction: 0.32,
+      slideAmount: 0.82,
+      alignSpeed: 4.2,
+      rotateSpeed: 5.7,
+      tapStrength: 8.0,
+      tapLiftAll: 0.0,
+      tapJitterAmount: 0.22,
+      filingMedianL: 0.68e-3,
+      sprinkleCount: 18000,
+      strayCount: 2500,
+      sprinkleR: 0.190,
+      sprinklePattern: 'sheet',
+      sprinkleClump: 0.35,
+    },
+    timeline: [],   // clear board — the story is told by the overlay alone
+  },
+  {
     name: 'Dipole reveal',
     hint: 'A calm sprinkle, then taps reveal the two-pole field around the loop.',
     duration: 10,
@@ -563,6 +631,13 @@ const COIL_VARIANT = {
   },
   currentDirectionText(dir) {
     return dir < 0 ? '↺ current runs right-to-left around loop' : '↻ current runs left-to-right around loop';
+  },
+  // Turns stage (panel ➕ button + 'Coil turns stage' preset): each press
+  // adds a conductor and the ring count blooms to the per-turns target —
+  // more turns, stronger field. Board stays clear, no tap, 80 A held.
+  turnsStage: {
+    dur: 2.2,
+    linesByTurns: { 1: 9, 2: 22, 3: 36 },
   },
   // Coil surge (panel ⚡ button + 'Coil surge stage' preset): stronger
   // current reads as MORE rings spaced WIDER (multiplier), faster flow.

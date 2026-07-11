@@ -70,6 +70,23 @@ export function buildPanel(root, app) {
       row.appendChild(surge);
       b.appendChild(row);
     }
+    if (app.variant?.turnsStage) {
+      const row = document.createElement('div');
+      row.className = 'ctl-row';
+      const btn = document.createElement('button');
+      const cur = app.ui.coilTurns ?? 1;
+      const lines = app.variant.turnsStage.linesByTurns ?? {};
+      if (cur >= 3) {
+        btn.textContent = '➕ 3 coils (max) — reload preset to reset';
+        btn.disabled = true;
+      } else {
+        btn.textContent = `➕ Add coil → ${cur + 1} (rings ${lines[cur] ?? '?'} → ${lines[cur + 1] ?? '?'})`;
+      }
+      btn.title = 'Continuous-shot move: the next conductor appears and the field-line count blooms smoothly to its target — no sprinkle, no tap.';
+      btn.onclick = () => app.liveAddCoil();
+      row.appendChild(btn);
+      b.appendChild(row);
+    }
     subhead(b, 'CONDUCTOR OVERLAY');
     check(b, 'Overlay visible', app.ui.showIndicator, (v) => { app.ui.showIndicator = v; });
     check(b, 'Pulses', app.ui.showCurrentPulses, (v) => { app.ui.showCurrentPulses = v; });
