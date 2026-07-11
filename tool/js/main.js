@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v48';
-import { SceneLayers } from './render/scene.js?v=coil-v48';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v48';
-import { Overlays } from './render/overlays.js?v=coil-v48';
+import { createGL } from './render/gl.js?v=coil-v49';
+import { SceneLayers } from './render/scene.js?v=coil-v49';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v49';
+import { Overlays } from './render/overlays.js?v=coil-v49';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v48';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v48';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v49';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v49';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v48';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v48';
+import { PRESETS } from './ui/presets.js?v=coil-v49';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v49';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v48';
-import { CompassOverlay } from './render/compass.js?v=coil-v48';
+import { buildVariantConfig } from './variant.js?v=coil-v49';
+import { CompassOverlay } from './render/compass.js?v=coil-v49';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v48', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v49', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -777,7 +777,13 @@ app.liveSurge = (spec = {}) => {
   for (const [k, to] of Object.entries(spec.ui ?? {})) {
     tracks[k] = { from: app.ui[k] ?? to, to };
   }
-  surgeAnim = { fromA: p.currentA, targetA, tracks, lastPanel: 0 };
+  // WORKER params can surge too (chain strength, pulls, ...): they glide
+  // with the same amplitude progress and get pushed to the sim each frame.
+  const pTracks = {};
+  for (const [k, to] of Object.entries(spec.params ?? {})) {
+    pTracks[k] = { from: app.params[k] ?? to, to };
+  }
+  surgeAnim = { fromA: p.currentA, targetA, tracks, pTracks, lastPanel: 0 };
   app.ui.currentOn = true;
   syncCurrentSwitch();
   app.worker.postMessage({ type: 'current',
@@ -794,6 +800,17 @@ function surgeFollow(current) {
   for (const [k, t] of Object.entries(sa.tracks)) {
     const v = prog >= 1 ? t.to : t.from + (t.to - t.from) * prog;
     app.ui[k] = k === 'fieldLineCount' ? Math.round(v) : v;
+  }
+  const pKeys = Object.keys(sa.pTracks ?? {});
+  if (pKeys.length) {
+    const patch = {};
+    for (const k of pKeys) {
+      const t = sa.pTracks[k];
+      const v = prog >= 1 ? t.to : t.from + (t.to - t.from) * prog;
+      app.params[k] = v;
+      patch[k] = v;
+    }
+    app.pushParams(patch);
   }
   app.params.currentA = prog >= 1 ? sa.targetA : Math.round(sa.fromA + span * prog);
   rebuildFieldOverlay();

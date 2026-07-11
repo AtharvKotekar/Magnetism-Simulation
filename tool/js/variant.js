@@ -47,12 +47,16 @@ const STRAIGHT_VARIANT = {
   compass: { assetsBase: 'assets/' },
   // Continuous-shot surge move (panel ⚡ button): amplitude ramps to targetA
   // while each listed adjuster glides from its current value to its target.
+  // The rings stay put — the story is told by the brighter/faster pulses
+  // and the filing response strengthening (worker params glide too), with
+  // the single tap blooming the pattern outward.
   surge: {
     label: '⚡ Surge to 100 A',
-    title: 'Continuous-shot move: ramp amplitude to 100 A, grow field lines to 14, ease falloff to 0.75, speed pulses to 3× — ONE tap, no re-sprinkle',
+    title: 'Continuous-shot move: ramp 25 → 100 A — pulses brighten to 0.9× and speed to 2.5×, the filing response strengthens (chain 1.85×, pulls up) and ONE tap blooms the pattern. Rings stay put.',
     targetA: 100,
     dur: 2.6,
-    ui: { fieldLineCount: 14, fieldFalloffCurve: 0.75, currentPulseSpeed: 3, fieldMotionSpeed: 3 },
+    ui: { currentIndicatorStrength: 0.90, currentPulseSpeed: 2.50 },
+    params: { chainStrength: 1.85, inwardPull: 0.00725, pullRadius: 0.140, axisPull: 0.00575 },
   },
   currentOverlay: {},
   currentDirectionText(dir) {
