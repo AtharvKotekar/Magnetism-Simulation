@@ -45,6 +45,15 @@ const STRAIGHT_VARIANT = {
   // Compass prop: draggable on the cardboard, needle deflects with the net
   // in-plane field (Earth north + wire tangent) — the Oersted demo.
   compass: { assetsBase: 'assets/' },
+  // Continuous-shot surge move (panel ⚡ button): amplitude ramps to targetA
+  // while each listed adjuster glides from its current value to its target.
+  surge: {
+    label: '⚡ Surge to 100 A',
+    title: 'Continuous-shot move: ramp amplitude to 100 A, grow field lines to 14, ease falloff to 0.75, speed pulses to 3× — ONE tap, no re-sprinkle',
+    targetA: 100,
+    dur: 2.6,
+    ui: { fieldLineCount: 14, fieldFalloffCurve: 0.75, currentPulseSpeed: 3, fieldMotionSpeed: 3 },
+  },
   currentOverlay: {},
   currentDirectionText(dir) {
     return dir < 0 ? '⬇ current flows DOWN through hole' : '⬆ current flows UP through hole';
@@ -151,6 +160,78 @@ export const COIL_PRESETS = [
       rotateSpeed: 5.7,
       tapStrength: 8.0,
       tapLiftAll: 1.0,
+      tapJitterAmount: 0.22,
+      filingMedianL: 0.68e-3,
+      sprinkleCount: 18000,
+      strayCount: 2500,
+      sprinkleR: 0.190,
+      sprinklePattern: 'sheet',
+      sprinkleClump: 0.35,
+    },
+    timeline: [
+      { t: 0.2, type: 'sprinkle', count: 18000, strayCount: 2500, pattern: 'sheet', radius: 0.190, clump: 0.35 },
+    ],
+  },
+  {
+    // Continuous-shot surge take: load, tap once so the pattern settles at
+    // 32 A, record, then hit the panel's ⚡ Surge button — amplitude ramps
+    // 32 → 100 A while rings grow 10 → 13, the multiplier widens
+    // 1.08 → 1.28, pulses speed to 2.35× and field motion to 1.7×, with
+    // exactly ONE tap and no re-sprinkle.
+    name: 'Coil surge stage 32→100 A',
+    hint: 'Base look at 32 A — record, then ⚡ Surge: rings bloom 10→13 wider apart, flow speeds up, one tap.',
+    duration: 20,
+    ui: {
+      ...COIL_UI,
+      currentOn: true,
+      fieldLineCount: 10,
+      fieldRadiusMultiplier: 1.08,
+      fieldFirstRadiusPx: 64,
+      fieldMaxRadiusPx: 1520,
+      fieldFalloffCurve: 1.0,
+      fieldLineStrength: 2.2,
+      fieldLineOpacity: 0.35,
+      fieldLineThickness: 1.45,
+      fieldLineDetail: 88,
+      fieldMotionStrength: 1.25,
+      fieldMotionSpeed: 1.0,
+      fieldMotionSpacing: 170,
+      currentIndicatorStrength: 0.6,
+      currentPulseSpeed: 1.0,
+      currentPulseSpacing: 140,
+      currentTrackWidth: 12,
+      coilTurns: 1,
+      boardShake: 0.72,
+      liftScale: 2.0,
+    },
+    cal: { ...COIL_CALIBRATION },
+    params: {
+      fieldModel: 'coilDipole',
+      currentA: 32,
+      currentMode: 'dc',
+      acFreq: 5,
+      rampDur: 0.4,
+      currentDir: 1,
+      currentAutoAlign: false,
+      currentMotion: 0.58,
+      fieldReach30A: 0.150,
+      fieldReferenceR: 0.050,
+      fieldFalloffPower: 1.05,
+      fieldMinResponse: 0.004,
+      chainSpacing: 0.0032,
+      chainStrength: 0.55,
+      chainCapture: 0.90,
+      // retuned live for this take: stronger pulls toward the legs and the
+      // flux lines through the loop than the default coil stage
+      inwardPull: 0.00575,
+      pullRadius: 0.110,
+      axisPull: 0.00425,
+      visualFriction: 0.32,
+      slideAmount: 0.82,
+      alignSpeed: 4.2,
+      rotateSpeed: 5.7,
+      tapStrength: 8.0,
+      tapLiftAll: 0.0,
       tapJitterAmount: 0.22,
       filingMedianL: 0.68e-3,
       sprinkleCount: 18000,
@@ -478,6 +559,20 @@ const COIL_VARIANT = {
   },
   currentDirectionText(dir) {
     return dir < 0 ? '↺ current runs right-to-left around loop' : '↻ current runs left-to-right around loop';
+  },
+  // Coil surge (panel ⚡ button + 'Coil surge stage' preset): stronger
+  // current reads as MORE rings spaced WIDER (multiplier), faster flow.
+  surge: {
+    label: '⚡ Surge to 100 A',
+    title: 'Continuous-shot move: ramp amplitude to 100 A, rings 10 → 13, multiplier 1.08 → 1.28, pulses to 2.35×, field motion to 1.7× — ONE tap, no re-sprinkle',
+    targetA: 100,
+    dur: 2.6,
+    ui: {
+      fieldLineCount: 13,
+      fieldRadiusMultiplier: 1.28,
+      currentPulseSpeed: 2.35,
+      fieldMotionSpeed: 1.70,
+    },
   },
   params: {
     fieldModel: 'coilDipole',

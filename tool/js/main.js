@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v45';
-import { SceneLayers } from './render/scene.js?v=coil-v45';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v45';
-import { Overlays } from './render/overlays.js?v=coil-v45';
+import { createGL } from './render/gl.js?v=coil-v46';
+import { SceneLayers } from './render/scene.js?v=coil-v46';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v46';
+import { Overlays } from './render/overlays.js?v=coil-v46';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v45';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v45';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v46';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v46';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v45';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v45';
+import { PRESETS } from './ui/presets.js?v=coil-v46';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v46';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v45';
-import { CompassOverlay } from './render/compass.js?v=coil-v45';
+import { buildVariantConfig } from './variant.js?v=coil-v46';
+import { CompassOverlay } from './render/compass.js?v=coil-v46';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v45', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v46', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -764,13 +764,19 @@ app.liveCurrent = () => sendCurrentState(true);
 // touched, and the tap blooms to the full target amplitude because the
 // worker computes reach from the ramp target.
 let surgeAnim = null;
-app.liveSurge = (targetA = 100, dur = 2.6, lines = 14, falloff = 0.75, speedTo = 3) => {
+// spec: { targetA, dur, ui: { uiKey: targetValue, ... } } — each listed UI
+// adjuster glides from its CURRENT value to the target as the amplitude
+// ramps. Variants define their own spec (variant.surge): the straight wire
+// eases the falloff curve, the coil widens the ring multiplier.
+app.liveSurge = (spec = {}) => {
   const p = app.params;
-  surgeAnim = {
-    fromA: p.currentA, targetA, lines, falloff,
-    c0: app.ui.fieldLineCount, f0: app.ui.fieldFalloffCurve,
-    speedTo, ps0: app.ui.currentPulseSpeed, ms0: app.ui.fieldMotionSpeed, lastPanel: 0,
-  };
+  const targetA = spec.targetA ?? 100;
+  const dur = spec.dur ?? 2.6;
+  const tracks = {};
+  for (const [k, to] of Object.entries(spec.ui ?? {})) {
+    tracks[k] = { from: app.ui[k] ?? to, to };
+  }
+  surgeAnim = { fromA: p.currentA, targetA, tracks, lastPanel: 0 };
   app.ui.currentOn = true;
   syncCurrentSwitch();
   app.worker.postMessage({ type: 'current',
@@ -784,11 +790,11 @@ function surgeFollow(current) {
   if (!sa) return;
   const span = sa.targetA - sa.fromA || 1;
   const prog = Math.max(0, Math.min(1, (current - sa.fromA) / span));
-  app.ui.fieldLineCount = prog >= 1 ? sa.lines : Math.round(sa.c0 + (sa.lines - sa.c0) * prog);
-  app.ui.fieldFalloffCurve = prog >= 1 ? sa.falloff : sa.f0 + (sa.falloff - sa.f0) * prog;
+  for (const [k, t] of Object.entries(sa.tracks)) {
+    const v = prog >= 1 ? t.to : t.from + (t.to - t.from) * prog;
+    app.ui[k] = k === 'fieldLineCount' ? Math.round(v) : v;
+  }
   app.params.currentA = prog >= 1 ? sa.targetA : Math.round(sa.fromA + span * prog);
-  app.ui.currentPulseSpeed = prog >= 1 ? sa.speedTo : sa.ps0 + (sa.speedTo - sa.ps0) * prog;
-  app.ui.fieldMotionSpeed = prog >= 1 ? sa.speedTo : sa.ms0 + (sa.speedTo - sa.ms0) * prog;
   rebuildFieldOverlay();
   const now = performance.now();
   if (prog >= 1 || now - sa.lastPanel > 150) {
