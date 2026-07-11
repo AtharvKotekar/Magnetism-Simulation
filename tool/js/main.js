@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v49';
-import { SceneLayers } from './render/scene.js?v=coil-v49';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v49';
-import { Overlays } from './render/overlays.js?v=coil-v49';
+import { createGL } from './render/gl.js?v=coil-v50';
+import { SceneLayers } from './render/scene.js?v=coil-v50';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v50';
+import { Overlays } from './render/overlays.js?v=coil-v50';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v49';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v49';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v50';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v50';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v49';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v49';
+import { PRESETS } from './ui/presets.js?v=coil-v50';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v50';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v49';
-import { CompassOverlay } from './render/compass.js?v=coil-v49';
+import { buildVariantConfig } from './variant.js?v=coil-v50';
+import { CompassOverlay } from './render/compass.js?v=coil-v50';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v49', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v50', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -129,9 +129,38 @@ function handleFrame(m) {
   app.stats.rendered = m.count;
   app.stats.awake = m.awake;
   lastFrameData = m;
-  surgeFollow(m.current);
+  advanceFlowPhases(m);   // before surgeFollow: integrate with the speeds
+  surgeFollow(m.current); // that were active over this frame's dt
   compassOrbitFollow(m);
   turnsFollow(m);
+}
+
+// Film-safe flow speeds: cap the dash advance below ~42% of its spacing per
+// 24 fps film frame — past half a spacing per frame the eye locks onto the
+// nearer dash BEHIND and the motion reads backward (wagon-wheel effect).
+function filmSafePulseSpeed() {
+  return Math.min(app.ui.currentPulseSpeed ?? 1, 0.024 * (app.ui.currentPulseSpacing ?? 140));
+}
+function filmSafeFieldSpeed() {
+  return Math.min(app.ui.fieldMotionSpeed ?? 1, 0.056 * (app.ui.fieldMotionSpacing ?? 170));
+}
+
+// Integrate the overlay flow into traveled PIXELS. The dash shaders compute
+// phase from time*speed, which is only valid while speed is constant: when
+// the surge ramps the pulse speed (or AC flips the direction sign) an
+// absolute-time phase teleports by simTime*deltaSpeed each frame — at
+// simTime 200 s that is thousands of pixels per frame, and the pattern
+// visibly scrambles "backward". Accumulating distance makes every speed or
+// direction change slide the pattern smoothly instead.
+function advanceFlowPhases(m) {
+  const fp = app.flowPhase ?? (app.flowPhase = { t: m.time, cur: 0, fld: 0, arw: 0 });
+  let dt = m.time - fp.t;
+  if (dt < 0) { fp.cur = 0; fp.fld = 0; fp.arw = 0; dt = 0; }   // take restarted
+  fp.t = m.time;
+  const dirSign = currentDirection(m) < 0 ? 1 : -1;
+  fp.cur += 420 * filmSafePulseSpeed() * dirSign * dt;
+  fp.fld += 180 * filmSafeFieldSpeed() * dirSign * dt;
+  fp.arw += 180 * (app.ui.fieldArrowSpeed ?? 0) * dirSign * dt;
 }
 
 // ---------- interactive loop ----------
@@ -363,6 +392,18 @@ function drawFrame(m, {
 
   const currentAbs = Math.abs(m?.current ?? 0);
   const effectiveDir = currentDirection(m);
+  // The dash/head/arrow shaders take time*speed; pass effective times that
+  // make that product equal the INTEGRATED travel distance (flowPhase), so
+  // surge ramps and AC direction flips slide the pattern instead of
+  // teleporting it (which reads as the current running backward).
+  const dirSign = effectiveDir < 0 ? 1 : -1;
+  const fp = app.flowPhase || { cur: 0, fld: 0, arw: 0 };
+  const curPxS = 420 * filmSafePulseSpeed() * dirSign;
+  const fldPxS = 180 * filmSafeFieldSpeed() * dirSign;
+  const arwPxS = 180 * (app.ui.fieldArrowSpeed ?? 0) * dirSign;
+  const tCur = curPxS ? fp.cur / curPxS : 0;
+  const tFld = fldPxS ? fp.fld / fldPxS : 0;
+  const tArw = arwPxS ? fp.arw / arwPxS : 0;
   // The reverse keyframe shows the cell physically flipped, so it follows
   // the wiring: the signed DC direction, but never the AC oscillation.
   const baseReverse =
@@ -383,7 +424,7 @@ function drawFrame(m, {
       res: o.res,
       jitterPx: [0, 0],
       dir: effectiveDir,
-      time: m?.time ?? 0,
+      time: tFld,
       hole: app.holePlane,
     };
     if (app.ui.showFieldLines) {
@@ -400,7 +441,7 @@ function drawFrame(m, {
         mode: 'pulse',
         color: hexToRgb(app.ui.fieldMotionColor),
         intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
-        speed: app.ui.fieldMotionSpeed,
+        speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         pulseWidth: app.ui.fieldPulseWidth,
         tail: app.ui.fieldCometTail,
@@ -413,7 +454,7 @@ function drawFrame(m, {
         mode: 'comet',
         color: hexToRgb(app.ui.fieldMotionColor),
         intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
-        speed: app.ui.fieldMotionSpeed,
+        speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         pulseWidth: app.ui.fieldPulseWidth,
         tail: app.ui.fieldCometTail,
@@ -425,7 +466,7 @@ function drawFrame(m, {
         ...fieldBase,
         color: hexToRgb(app.ui.fieldMotionColor),
         intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
-        speed: app.ui.fieldMotionSpeed,
+        speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         cometHeadSize: app.ui.fieldCometHeadSize,
       });
@@ -433,6 +474,7 @@ function drawFrame(m, {
     if (app.ui.showFieldArrows) {
       app.overlays.drawFieldArrows({
         ...fieldBase,
+        time: tArw,
         color: hexToRgb(app.ui.fieldArrowColor ?? app.ui.fieldLineColor),
         intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldArrowStrength),
         speed: app.ui.fieldArrowSpeed,
@@ -462,12 +504,12 @@ function drawFrame(m, {
     const currentBase = {
       res: o.res,
       screen: o.screen,
-      time: m?.time ?? 0,
+      time: tCur,
       dir: effectiveDir,
       cardboardTex: app.scene.cardboard.tex,
       color: hexToRgb(app.ui.currentIndicatorColor),
       jitterPx: [0, 0],
-      speed: app.ui.currentPulseSpeed,
+      speed: filmSafePulseSpeed(),
       spacing: app.ui.currentPulseSpacing,
       pulseWidth: app.ui.currentPulseWidth,
       tail: app.ui.currentCometTail,

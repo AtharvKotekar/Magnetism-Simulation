@@ -124,6 +124,13 @@ re-measure rather than eyeballing.
 - Worker perf traps already fixed once (don't reintroduce): neighbor work per
   frame not per substep; wake scans must use torque at the filing's actual
   orientation.
+- Dash/comet flow phase is INTEGRATED (`advanceFlowPhases` in main.js) and
+  fed to the shaders as an effective time. Never go back to passing raw sim
+  time: `phase = time*speed` teleports the pattern by simTime·Δspeed
+  whenever the speed ramps (surge) or AC flips the sign — reads as the
+  current running backward. `filmSafePulseSpeed/FieldSpeed` also cap the
+  advance below ~42% of the dash spacing per 24 fps frame (wagon-wheel
+  threshold).
 
 ## After code changes
 
