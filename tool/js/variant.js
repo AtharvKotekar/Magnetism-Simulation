@@ -179,7 +179,7 @@ export const COIL_PRESETS = [
     // 1.08 → 1.28, pulses speed to 2.35× and field motion to 1.7×, with
     // exactly ONE tap and no re-sprinkle.
     name: 'Coil surge stage 32→100 A',
-    hint: 'Base look at 32 A — record, then ⚡ Surge: rings bloom 10→13 wider apart, flow speeds up, one tap.',
+    hint: 'Base look at 32 A — record, then ⚡ Surge: rings bloom 10→13 wider apart, filings surge outward, one tap.',
     duration: 20,
     ui: {
       ...COIL_UI,
@@ -204,7 +204,9 @@ export const COIL_PRESETS = [
       boardShake: 0.72,
       liftScale: 2.0,
     },
-    cal: { ...COIL_CALIBRATION },
+    // holeWallR at its minimum: filings pack right up to the conductors,
+    // so the surge visibly draws material toward the legs.
+    cal: { ...COIL_CALIBRATION, holeWallR: 0.006 },
     params: {
       fieldModel: 'coilDipole',
       currentA: 32,
@@ -214,18 +216,20 @@ export const COIL_PRESETS = [
       currentDir: 1,
       currentAutoAlign: false,
       currentMotion: 0.58,
-      fieldReach30A: 0.150,
+      // retuned live for this take so the surge tap MOVES the pattern:
+      // reach covers 120% of the sheet, chains grab much harder, and the
+      // pulls toward the legs / flux lines are stronger than the default
+      // coil stage — the whole board reorganizes when the current jumps.
+      fieldReach30A: 0.480,
       fieldReferenceR: 0.050,
       fieldFalloffPower: 1.05,
       fieldMinResponse: 0.004,
       chainSpacing: 0.0032,
-      chainStrength: 0.55,
+      chainStrength: 1.50,
       chainCapture: 0.90,
-      // retuned live for this take: stronger pulls toward the legs and the
-      // flux lines through the loop than the default coil stage
-      inwardPull: 0.00575,
-      pullRadius: 0.110,
-      axisPull: 0.00425,
+      inwardPull: 0.0075,
+      pullRadius: 0.140,
+      axisPull: 0.0055,
       visualFriction: 0.32,
       slideAmount: 0.82,
       alignSpeed: 4.2,
