@@ -144,6 +144,9 @@ export const PRESETS = [
       compassOrbitDur: 7,
       compassX: 0.2428,
       compassY: 0.1916,
+      // the field flow starts INVISIBLE — the compass paints the direction
+      // onto each ring as it sweeps it
+      fieldRevealMode: true,
     },
     params: {
       currentA: 30,

@@ -154,9 +154,11 @@ uniform vec2 uRes;
 uniform vec2 uJitterPx;
 out float vArc;
 out float vSide;
+out vec2 vPlane;
 void main() {
   vArc = aArc;
   vSide = aSide;
+  vPlane = aPlane;
   vec3 q = uH * vec3(aPlane, 1.0);
   vec2 px = q.xy / q.z + uJitterPx;
   vec2 ndc = vec2(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0);
@@ -167,6 +169,7 @@ const FIELD_DASH_FS = `#version 300 es
 precision highp float;
 in float vArc;
 in float vSide;
+in vec2 vPlane;
 uniform float uTime;
 uniform float uSpeed;
 uniform float uIntensity;
@@ -176,9 +179,24 @@ uniform float uPulseWidth;
 uniform float uWidthFrac;
 uniform float uMode;         // 0 = pulse, 1 = comet
 uniform vec3 uColor;
+// Angular reveal (compass trace): show flow only on the arc the compass
+// has already swept. Off (uRevealOn = 0) for every other stage/variant.
+uniform float uRevealOn;
+uniform vec2 uRevealC;       // wire in plane meters
+uniform float uRevealTh0;    // trace start bearing
+uniform float uRevealDir;    // sweep direction sign
+uniform float uRevealSweep1; // swept radians, inner ring
+uniform float uRevealSweep2; // swept radians, outer ring
+uniform float uRevealRSplit; // ring boundary radius, meters
 out vec4 fragColor;
 void main() {
   if (uIntensity < 0.003) discard;
+  if (uRevealOn > 0.5) {
+    vec2 d = vPlane - uRevealC;
+    float delta = mod((atan(d.y, d.x) - uRevealTh0) * uRevealDir, 6.2831853);
+    float sweep = length(d) < uRevealRSplit ? uRevealSweep1 : uRevealSweep2;
+    if (delta > sweep) discard;
+  }
   float spacing = max(12.0, uSpacing);
   float phase = fract((vArc - uTime * uSpeed) / spacing);
   // The tail must trail the motion: marks travel toward -arc when
@@ -208,9 +226,21 @@ uniform float uTime;
 uniform float uSpeedPx;
 uniform float uPxToM;
 uniform float uDirSign;
+uniform float uRevealOn;
+uniform float uRevealTh0;
+uniform float uRevealDir;
+uniform float uRevealSweep1;
+uniform float uRevealSweep2;
+uniform float uRevealRSplit;
 void main() {
   float angularSpeed = uSpeedPx * uPxToM / max(0.0001, aRadius);
   float a = aAngle + uTime * angularSpeed * uDirSign;
+  if (uRevealOn > 0.5) {
+    // hide heads whose CURRENT angle is outside the swept arc of their ring
+    float delta = mod((a - uRevealTh0) * uRevealDir, 6.2831853);
+    float sweep = aRadius < uRevealRSplit ? uRevealSweep1 : uRevealSweep2;
+    if (delta > sweep) { gl_Position = vec4(2.0e4, 2.0e4, 2.0, 1.0); return; }
+  }
   vec2 aNormal = vec2(cos(a), sin(a));
   vec2 aTangent = vec2(-sin(a), cos(a));
   vec2 aCenter = uHole + aNormal * aRadius;
@@ -297,6 +327,8 @@ export class Overlays {
     for (const n of [
       'uH', 'uRes', 'uJitterPx', 'uTime', 'uSpeed', 'uIntensity',
       'uSpacing', 'uTail', 'uPulseWidth', 'uWidthFrac', 'uMode', 'uColor',
+      'uRevealOn', 'uRevealC', 'uRevealTh0', 'uRevealDir',
+      'uRevealSweep1', 'uRevealSweep2', 'uRevealRSplit',
     ])
       this.fdu[n] = gl.getUniformLocation(this.fieldDashProg, n);
     this.fau = {
@@ -310,6 +342,9 @@ export class Overlays {
       uDirSign: gl.getUniformLocation(this.fieldArrowProg, 'uDirSign'),
       uColor: gl.getUniformLocation(this.fieldArrowProg, 'uColor'),
     };
+    for (const n of ['uRevealOn', 'uRevealTh0', 'uRevealDir',
+      'uRevealSweep1', 'uRevealSweep2', 'uRevealRSplit'])
+      this.fau[n] = gl.getUniformLocation(this.fieldArrowProg, n);
     this.fvau = {
       uH: gl.getUniformLocation(this.fieldVectorArrowProg, 'uH'),
       uRes: gl.getUniformLocation(this.fieldVectorArrowProg, 'uRes'),
@@ -1229,6 +1264,14 @@ export class Overlays {
     gl.uniform2f(this.fdu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
     gl.uniform1f(this.fdu.uTime, o.time ?? 0);
     gl.uniform1f(this.fdu.uSpeed, 180.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1));
+    const rv = o.reveal;
+    gl.uniform1f(this.fdu.uRevealOn, rv ? 1 : 0);
+    gl.uniform2f(this.fdu.uRevealC, rv?.c?.[0] ?? 0, rv?.c?.[1] ?? 0);
+    gl.uniform1f(this.fdu.uRevealTh0, rv?.th0 ?? 0);
+    gl.uniform1f(this.fdu.uRevealDir, rv?.dir ?? 1);
+    gl.uniform1f(this.fdu.uRevealSweep1, rv?.sweep1 ?? 0);
+    gl.uniform1f(this.fdu.uRevealSweep2, rv?.sweep2 ?? 0);
+    gl.uniform1f(this.fdu.uRevealRSplit, rv?.rSplit ?? 0);
     gl.uniform1f(this.fdu.uIntensity, Math.min(3, Math.max(0, o.intensity ?? 1)));
     gl.uniform1f(this.fdu.uSpacing, o.spacing ?? 160);
     gl.uniform1f(this.fdu.uTail, o.tail ?? 3);
@@ -1334,6 +1377,13 @@ export class Overlays {
     gl.uniform1f(this.fau.uSpeedPx, speedPx);
     gl.uniform1f(this.fau.uPxToM, this.fieldPxToM || 1e-4);
     gl.uniform1f(this.fau.uDirSign, o.dir < 0 ? 1 : -1);
+    const rv = o.reveal;
+    gl.uniform1f(this.fau.uRevealOn, rv ? 1 : 0);
+    gl.uniform1f(this.fau.uRevealTh0, rv?.th0 ?? 0);
+    gl.uniform1f(this.fau.uRevealDir, rv?.dir ?? 1);
+    gl.uniform1f(this.fau.uRevealSweep1, rv?.sweep1 ?? 0);
+    gl.uniform1f(this.fau.uRevealSweep2, rv?.sweep2 ?? 0);
+    gl.uniform1f(this.fau.uRevealRSplit, rv?.rSplit ?? 0);
     const c = o.color || [0.55, 0.85, 1.0];
     const intensity = Math.max(0, o.intensity ?? 1);
     gl.uniform4f(this.fau.uColor, c[0], c[1], c[2], Math.min(0.90, alphaScale * intensity));

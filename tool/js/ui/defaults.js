@@ -67,6 +67,9 @@ export const DEFAULT_UI = {
   compassSize: 0.056,
   compassSensitivity: 3.0,
   compassOrbitDur: 8,   // seconds for one full revolution around the wire
+  // When true, field-motion comets start hidden and only appear on the arc
+  // the compass has swept during '☉ Trace rings one by one'.
+  fieldRevealMode: false,
   recFormat: 'mp4',
   recFps: 24,
   recQuality: 'ultra',

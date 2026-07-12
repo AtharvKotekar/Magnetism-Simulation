@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v52';
-import { SceneLayers } from './render/scene.js?v=coil-v52';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v52';
-import { Overlays } from './render/overlays.js?v=coil-v52';
+import { createGL } from './render/gl.js?v=coil-v53';
+import { SceneLayers } from './render/scene.js?v=coil-v53';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v53';
+import { Overlays } from './render/overlays.js?v=coil-v53';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v52';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v52';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v53';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v53';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v52';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v52';
+import { PRESETS } from './ui/presets.js?v=coil-v53';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v53';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v52';
-import { CompassOverlay } from './render/compass.js?v=coil-v52';
+import { buildVariantConfig } from './variant.js?v=coil-v53';
+import { CompassOverlay } from './render/compass.js?v=coil-v53';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v52', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v53', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -156,7 +156,11 @@ function filmSafeFieldSpeed() {
 function advanceFlowPhases(m) {
   const fp = app.flowPhase ?? (app.flowPhase = { t: m.time, cur: 0, fld: 0, arw: 0 });
   let dt = m.time - fp.t;
-  if (dt < 0) { fp.cur = 0; fp.fld = 0; fp.arw = 0; dt = 0; }   // take restarted
+  if (dt < 0) {                                                 // take restarted
+    fp.cur = 0; fp.fld = 0; fp.arw = 0; dt = 0;
+    // re-hide the compass-trace flow so the take is repeatable
+    if (app.fieldReveal) { app.fieldReveal.sweep1 = 0; app.fieldReveal.sweep2 = 0; }
+  }
   fp.t = m.time;
   const dirSign = currentDirection(m) < 0 ? 1 : -1;
   fp.cur += 420 * filmSafePulseSpeed() * dirSign * dt;
@@ -427,6 +431,8 @@ function drawFrame(m, {
       dir: effectiveDir,
       time: tFld,
       hole: app.holePlane,
+      // compass-trace reveal: flow shows only where the compass has swept
+      reveal: app.ui.fieldRevealMode && app.fieldReveal ? app.fieldReveal : null,
     };
     if (app.ui.showFieldLines) {
       app.overlays.drawFieldLines({
@@ -630,14 +636,25 @@ app.liveCompassTrace = () => {
   app.ui.fieldLineCount = 1;                    // ring 2 stays hidden for now
   rebuildFieldOverlay();
   buildPanel(document.getElementById('panel'), app);
+  const th0 = p.R < 1e-6 ? 0 : p.th;
+  const sweep = -sig * Math.PI * 2;             // travel WITH the field
+  // flow starts fully hidden; the compass paints it onto each ring
+  app.fieldReveal = {
+    c: [app.holePlane[0], app.holePlane[1]],
+    th0,
+    dir: Math.sign(sweep) || 1,
+    sweep1: 0,
+    sweep2: 0,
+    rSplit: (r1 + r2) / 2,
+  };
   compassTrace = {
     t0: null,
-    th0: p.R < 1e-6 ? 0 : p.th,
+    th0,
     r1,
     r2,
     orbitDur: Math.max(1, app.ui.compassOrbitDur ?? 7),
     shiftDur: 1.2,
-    sweep: -sig * Math.PI * 2,                  // travel WITH the field
+    sweep,
     revealed2: false,
   };
 };
@@ -650,11 +667,14 @@ function compassTraceFollow(m) {
   if (m.time < tr.t0) { compassTrace = null; return; }   // take restarted
   const t = m.time - tr.t0;
   const ease = (p) => p * p * (3 - 2 * p);
+  const rv = app.fieldReveal;
   let R, th;
   if (t < tr.orbitDur) {
-    // full revolution ON ring 1
+    // full revolution ON ring 1, painting its flow behind the compass
+    const e = ease(Math.min(1, t / tr.orbitDur));
     R = tr.r1;
-    th = tr.th0 + ease(Math.min(1, t / tr.orbitDur)) * tr.sweep;
+    th = tr.th0 + e * tr.sweep;
+    if (rv) rv.sweep1 = e * Math.PI * 2;
   } else if (t < tr.orbitDur + tr.shiftDur) {
     // reveal ring 2, glide radially out to it
     if (!tr.revealed2) {
@@ -663,14 +683,18 @@ function compassTraceFollow(m) {
       rebuildFieldOverlay();
       buildPanel(document.getElementById('panel'), app);
     }
+    if (rv) rv.sweep1 = Math.PI * 2;
     R = tr.r1 + (tr.r2 - tr.r1) * ease((t - tr.orbitDur) / tr.shiftDur);
     th = tr.th0;
   } else if (t < tr.orbitDur * 2 + tr.shiftDur) {
     // full revolution ON ring 2
+    const e = ease(Math.min(1, (t - tr.orbitDur - tr.shiftDur) / tr.orbitDur));
     R = tr.r2;
-    th = tr.th0 + ease(Math.min(1, (t - tr.orbitDur - tr.shiftDur) / tr.orbitDur)) * tr.sweep;
+    th = tr.th0 + e * tr.sweep;
+    if (rv) rv.sweep2 = e * Math.PI * 2;
   } else {
     R = tr.r2; th = tr.th0;
+    if (rv) { rv.sweep1 = Math.PI * 2; rv.sweep2 = Math.PI * 2; }
     compassTrace = null;
   }
   app.ui.compassX = app.holePlane[0] + R * Math.cos(th);
