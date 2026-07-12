@@ -111,6 +111,71 @@ export const PRESETS = [
     timeline: [],
   },
   {
+    // Compass ring-trace take: CLEAR board — the story is the compass and
+    // two wide field rings (220 px and ×1.90). Load (30 A up, both rings
+    // showing, compass parked ON ring 1), roll camera, then press
+    // '☉ Trace rings one by one': ring 2 hides, the compass makes a full
+    // revolution riding ring 1 with its needle tangent to the field, ring 2
+    // reappears as the compass glides out to it, and it traces that ring
+    // the same way. compassX/Y precomputed on ring 1 (bearing 35°) for the
+    // default calibration.
+    name: 'Compass trace stage',
+    hint: 'Clear board, 30 A, 2 wide rings, compass on ring 1. Press ☉ Trace rings one by one for the full choreography.',
+    duration: 20,
+    ui: {
+      currentOn: true,
+      fieldLineCount: 2,
+      fieldFirstRadiusPx: 220,
+      fieldRadiusMultiplier: 1.90,
+      fieldMaxRadiusPx: 1420,
+      fieldFalloffCurve: 1.0,
+      fieldLineStrength: 3.0,
+      fieldLineOpacity: 0.32,
+      fieldLineThickness: 2.20,
+      fieldLineDetail: 88,
+      fieldMotionSpeed: 1.0,
+      fieldMotionThickness: 0.75,
+      currentIndicatorStrength: 0.60,
+      currentPulseSpeed: 1.0,
+      boardShake: 0.90,
+      showCompass: true,
+      compassSize: 0.036,
+      compassSensitivity: 3.0,
+      compassOrbitDur: 7,
+      compassX: 0.2428,
+      compassY: 0.1916,
+    },
+    params: {
+      currentA: 30,
+      currentMode: 'dc',
+      acFreq: 5,
+      rampDur: 0.4,
+      currentDir: 1,
+      currentMotion: 0.50,
+      fieldReach30A: 0.080,
+      fieldFalloffPower: 1.15,
+      chainSpacing: 0.0030,
+      chainStrength: 0.30,
+      inwardPull: 0.00325,
+      pullRadius: 0.045,
+      axisPull: 0.0012,
+      visualFriction: 0.25,
+      slideAmount: 1.0,
+      alignSpeed: 4.0,
+      rotateSpeed: 5.25,
+      tapStrength: 8.0,
+      tapLiftAll: 1.0,
+      tapJitterAmount: 0.28,
+      filingMedianL: 0.70e-3,
+      sprinkleCount: 18000,
+      strayCount: 2401,
+      sprinkleR: 0.190,
+      sprinklePattern: 'sheet',
+      sprinkleClump: 0.65,
+    },
+    timeline: [],   // clear board — the compass and the rings tell the story
+  },
+  {
     // Continuous-shot surge take: the timeline sprinkles the whole board
     // and settles it with THREE taps at the 25 A base look. Roll camera,
     // then hit ⚡ Surge: amplitude ramps to 100 A, pulses brighten to 0.9×

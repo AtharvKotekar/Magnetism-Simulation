@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v51';
-import { SceneLayers } from './render/scene.js?v=coil-v51';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v51';
-import { Overlays } from './render/overlays.js?v=coil-v51';
+import { createGL } from './render/gl.js?v=coil-v52';
+import { SceneLayers } from './render/scene.js?v=coil-v52';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v52';
+import { Overlays } from './render/overlays.js?v=coil-v52';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v51';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v51';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v52';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v52';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v51';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v51';
+import { PRESETS } from './ui/presets.js?v=coil-v52';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v52';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v51';
-import { CompassOverlay } from './render/compass.js?v=coil-v51';
+import { buildVariantConfig } from './variant.js?v=coil-v52';
+import { CompassOverlay } from './render/compass.js?v=coil-v52';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v51', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v52', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -132,6 +132,7 @@ function handleFrame(m) {
   advanceFlowPhases(m);   // before surgeFollow: integrate with the speeds
   surgeFollow(m.current); // that were active over this frame's dt
   compassOrbitFollow(m);
+  compassTraceFollow(m);
   turnsFollow(m);
 }
 
@@ -610,6 +611,72 @@ function compassOrbitFollow(m) {
   if (p >= 1) compassOrbit = null;
 }
 
+// ---- ring trace: the compass demonstrates the field rings ONE BY ONE.
+// Stage 1: only ring 1 visible (line count 1), compass rides exactly on it
+// for a full revolution in the field direction. Then ring 2 is revealed,
+// the compass glides radially out to it and traces it the same way.
+// Sim-time driven, like the orbit — deterministic in recordings.
+let compassTrace = null;
+
+app.liveCompassTrace = () => {
+  if (!app.holePlane || !app.compass) return;
+  app.cancelCompassOrbit();
+  const pxPerM = Math.sqrt(Math.max(1e-9, Math.abs(app.detJHole || 1)));
+  const r1 = Math.max(0.02, (app.ui.fieldFirstRadiusPx ?? 220) / pxPerM);
+  const r2 = r1 * Math.max(1.05, app.ui.fieldRadiusMultiplier ?? 1.9);
+  const p = app.compassPolar();
+  const I = lastFrameData?.current ?? 0;
+  const sig = Math.abs(I) > 0.001 ? Math.sign(I) : (app.params.currentDir || 1);
+  app.ui.fieldLineCount = 1;                    // ring 2 stays hidden for now
+  rebuildFieldOverlay();
+  buildPanel(document.getElementById('panel'), app);
+  compassTrace = {
+    t0: null,
+    th0: p.R < 1e-6 ? 0 : p.th,
+    r1,
+    r2,
+    orbitDur: Math.max(1, app.ui.compassOrbitDur ?? 7),
+    shiftDur: 1.2,
+    sweep: -sig * Math.PI * 2,                  // travel WITH the field
+    revealed2: false,
+  };
+};
+app.cancelCompassTrace = () => { compassTrace = null; };
+
+function compassTraceFollow(m) {
+  const tr = compassTrace;
+  if (!tr || !app.holePlane) return;
+  if (tr.t0 == null) tr.t0 = m.time;
+  if (m.time < tr.t0) { compassTrace = null; return; }   // take restarted
+  const t = m.time - tr.t0;
+  const ease = (p) => p * p * (3 - 2 * p);
+  let R, th;
+  if (t < tr.orbitDur) {
+    // full revolution ON ring 1
+    R = tr.r1;
+    th = tr.th0 + ease(Math.min(1, t / tr.orbitDur)) * tr.sweep;
+  } else if (t < tr.orbitDur + tr.shiftDur) {
+    // reveal ring 2, glide radially out to it
+    if (!tr.revealed2) {
+      tr.revealed2 = true;
+      app.ui.fieldLineCount = 2;
+      rebuildFieldOverlay();
+      buildPanel(document.getElementById('panel'), app);
+    }
+    R = tr.r1 + (tr.r2 - tr.r1) * ease((t - tr.orbitDur) / tr.shiftDur);
+    th = tr.th0;
+  } else if (t < tr.orbitDur * 2 + tr.shiftDur) {
+    // full revolution ON ring 2
+    R = tr.r2;
+    th = tr.th0 + ease(Math.min(1, (t - tr.orbitDur - tr.shiftDur) / tr.orbitDur)) * tr.sweep;
+  } else {
+    R = tr.r2; th = tr.th0;
+    compassTrace = null;
+  }
+  app.ui.compassX = app.holePlane[0] + R * Math.cos(th);
+  app.ui.compassY = app.holePlane[1] + R * Math.sin(th);
+}
+
 // Needle heading as a PURE function of (position, signed current) — no
 // history, so identical takes render identical frames. The needle settles
 // along the net in-plane field: Earth's field (fixed, pointing to the top
@@ -650,6 +717,7 @@ function bindCompassDrag() {
     if (!hit(e)) return;
     dragging = true;
     app.cancelCompassOrbit();                   // hand takes over from the orbit
+    app.cancelCompassTrace();
     cv.setPointerCapture(e.pointerId);
     e.preventDefault();
   });

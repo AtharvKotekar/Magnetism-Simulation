@@ -370,6 +370,11 @@ export function buildPanel(root, app) {
     orbitBtn.title = 'One smooth full revolution on the invisible circular track — the needle rides the field the whole way.';
     orbitBtn.onclick = () => app.liveCompassOrbit(app.ui.compassOrbitDur);
     b.appendChild(orbitBtn);
+    const traceBtn = document.createElement('button');
+    traceBtn.textContent = '☉ Trace rings one by one';
+    traceBtn.title = 'Continuous-shot move: only ring 1 visible, the compass rides it for a full revolution, then ring 2 appears and the compass glides out and traces it too.';
+    traceBtn.onclick = () => app.liveCompassTrace();
+    b.appendChild(traceBtn);
     const hint = document.createElement('div');
     hint.className = 'hint';
     hint.textContent = 'Drag the compass anywhere — dragging also sets the orbit circle. Orbit radius moves it closer to or farther from the conductor.';
