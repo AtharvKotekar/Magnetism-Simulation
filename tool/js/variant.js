@@ -647,9 +647,9 @@ const COIL_VARIANT = {
   // current reads as MORE rings spaced WIDER (multiplier), faster flow.
   surge: {
     label: '⚡ Surge to 100 A',
-    title: 'Continuous-shot move: ramp amplitude to 100 A, rings 10 → 13, multiplier 1.08 → 1.28, pulses to 2.35×, field motion to 1.7× — ONE tap, no re-sprinkle',
+    title: 'Continuous-shot move: ramp amplitude to 100 A in ~1.3 s — rings 10 → 13, multiplier 1.08 → 1.28, pulses to 2.35×, field motion to 1.7×, ONE tap, no re-sprinkle',
     targetA: 100,
-    dur: 2.6,
+    dur: 1.3,   // snappy: the whole field change lands within ~1.2 s
     ui: {
       fieldLineCount: 13,
       fieldRadiusMultiplier: 1.28,
