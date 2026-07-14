@@ -1154,13 +1154,26 @@ export class Overlays {
     // bar magnet and never cross. Drawn ON TOP of the coil so the parallel
     // interior reads clearly.
     const Lh = L / 2;
-    const na = 3.4 * boreR, al = 1.6, Sw = 1.15 * Lh, tm = 2.6;
+    const na = 3.4 * boreR, al = 1.6, tm = 2.6;
+    const Sd = 0.55 * Lh;                 // flare decay length BEYOND the coil ends
     const hFn = (n) => n * Math.exp(-Math.pow(Math.abs(n) / na, al));
     const hpFn = (n) => (Math.abs(n) < 1e-9 ? 1
       : Math.exp(-Math.pow(Math.abs(n) / na, al)) * (1 - al * Math.pow(Math.abs(n) / na, al)));
-    const wFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sw, tm));
-    const wpFn = (u) => (Math.abs(u) < 1e-12 ? 0
-      : -wFn(u) * (tm / Sw) * Math.pow(Math.abs(u) / Sw, tm - 1) * Math.sign(u));
+    // Flat-top axial window: w = 1 for |u| <= Lh, so inside the coil the stream
+    // function is psi = h(n) and its level sets are EXACTLY straight, parallel
+    // lines (n = const) over the whole coil length. Streamlines only start to
+    // flare past the ends (|u| > Lh) — so every field line enters/exits at the
+    // pole faces and none crosses the coil's side wall.
+    const wFn = (u) => {
+      const a = Math.abs(u);
+      return a <= Lh ? 1 : Math.exp(-Math.pow((a - Lh) / Sd, tm));
+    };
+    const wpFn = (u) => {
+      const a = Math.abs(u);
+      if (a <= Lh) return 0;
+      const w = Math.exp(-Math.pow((a - Lh) / Sd, tm));
+      return -w * (tm / Sd) * Math.pow((a - Lh) / Sd, tm - 1) * Math.sign(u);
+    };
     const step = pxToM * 4;
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const clipRuns = (pp) => {
@@ -1200,7 +1213,7 @@ export class Overlays {
       // boundary point is shared by both, so the interior lines stay
       // CONNECTED to the curved exterior loops.
       for (const side of [1, -1]) {
-        const em = pts.map((p) => ({ ...emit(p.u, side * p.n), interior: p.n <= boreR }));
+        const em = pts.map((p) => ({ ...emit(p.u, side * p.n), interior: p.n <= boreR && Math.abs(p.u) <= Lh }));
         let run = [em[0]];
         const flushRun = (isInterior) => {
           if (run.length < 2) return;
@@ -1231,7 +1244,10 @@ export class Overlays {
       }
     }
     const boreVerts = [];
-    for (const bl of (this._solenoidBoreLines || [])) pushThickPlaneLine(bl, bandHalfWidth * 0.8, boreVerts, []);
+    const boreDashVerts = [];
+    for (const bl of (this._solenoidBoreLines || [])) {
+      pushThickPlaneLine(bl, bandHalfWidth * 0.8, boreVerts, boreDashVerts);
+    }
     this.fieldBoreCount = boreVerts.length / 2;
     if (!this.fieldBoreVAO) this.fieldBoreVAO = gl.createVertexArray();
     gl.bindVertexArray(this.fieldBoreVAO);
@@ -1241,6 +1257,21 @@ export class Overlays {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
+    // Interior flow: same dash geometry so comets can stream ALONG the bore
+    // lines to show field direction inside the coil (matches the exterior).
+    this.fieldBoreDashCount = boreDashVerts.length / 4;
+    if (!this.fieldBoreDashVAO) this.fieldBoreDashVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldBoreDashVAO);
+    if (!this.fieldBoreDashBuf) this.fieldBoreDashBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBoreDashBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boreDashVerts), gl.STATIC_DRAW);
+    const bStride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, bStride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, bStride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, bStride, 12);
+    gl.bindVertexArray(null);
+    // Keep the interior polylines so comet HEADS can be placed along them.
+    this.fieldBoreLines = this._solenoidBoreLines || [];
     this._solenoidBoreLines = null;
     this.fieldVectorLines = lines;
     this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
@@ -1321,6 +1352,83 @@ export class Overlays {
     gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], a);
     gl.drawArrays(gl.TRIANGLES, 0, this.fieldBoreCount);
     gl.bindVertexArray(null);
+  }
+
+  // Animated comets streaming ALONG the interior bore lines — shows the field
+  // DIRECTION inside the coil. Same dash shader / sign convention as the
+  // exterior flow (drawFieldDashes), and the bore lines are the same
+  // streamlines split at the pole faces, so a comet flows continuously from
+  // the interior into its exterior loop.
+  drawFieldBoreFlow(o) {
+    if (!this.fieldBoreDashCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.fieldDashProg);
+    gl.bindVertexArray(this.fieldBoreDashVAO);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix3fv(this.fdu.uH, false, o.H);
+    gl.uniform2f(this.fdu.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.fdu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    gl.uniform1f(this.fdu.uTime, o.time ?? 0);
+    gl.uniform1f(this.fdu.uSpeed, 180.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1));
+    gl.uniform1f(this.fdu.uRevealOn, 0);
+    gl.uniform2f(this.fdu.uRevealC, 0, 0);
+    gl.uniform1f(this.fdu.uRevealTh0, 0);
+    gl.uniform1f(this.fdu.uRevealDir, 1);
+    gl.uniform1f(this.fdu.uRevealSweep1, 0);
+    gl.uniform1f(this.fdu.uRevealSweep2, 0);
+    gl.uniform1f(this.fdu.uRevealRSplit, 0);
+    gl.uniform1f(this.fdu.uIntensity, Math.min(3, Math.max(0, o.intensity ?? 1)));
+    gl.uniform1f(this.fdu.uSpacing, o.spacing ?? 160);
+    gl.uniform1f(this.fdu.uTail, o.tail ?? 3);
+    gl.uniform1f(this.fdu.uPulseWidth, o.pulseWidth ?? 0.055);
+    gl.uniform1f(this.fdu.uWidthFrac, o.widthFrac ?? 0.8);
+    gl.uniform1f(this.fdu.uMode, 1);            // comet
+    const c = o.color || [0.55, 0.85, 1.0];
+    gl.uniform3f(this.fdu.uColor, c[0], c[1], c[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, this.fieldBoreDashCount);
+    gl.bindVertexArray(null);
+  }
+
+  // Comet-head triangles marching along the bore lines (field direction).
+  drawFieldBoreHeads(o) {
+    const lines = this.fieldBoreLines;
+    if (!lines?.length) return;
+    const gl = this.gl;
+    const spacing = Math.max(30, o.spacing ?? 170);
+    const speedPx = 180.0 * (o.speed ?? 1) * (o.dir < 0 ? 1 : -1);
+    const size = Math.max(0.25, o.cometHeadSize ?? 0.75);
+    const pxToM = this.fieldPxToM || 1e-4;
+    const len = Math.max(0.0012, pxToM * 20) * size;
+    const wid = len * 0.46;
+    const local = [
+      [len * 0.72, 0],
+      [-len * 0.56, -wid],
+      [-len * 0.56, wid],
+    ];
+    const verts = [];
+    const start = positiveMod((o.time ?? 0) * speedPx, spacing);
+    for (const line of lines) {
+      const total = line[line.length - 1]?.s ?? 0;
+      for (let s = start; s < total; s += spacing) {
+        const p = samplePlanePolyline(line, s);
+        if (!p) continue;
+        for (const l of local) verts.push(p.x, p.y, p.tx, p.ty, l[0], l[1]);
+      }
+    }
+    if (!verts.length) return;
+    this.fieldBoreHeadCount = verts.length / 6;
+    if (!this.fieldBoreHeadVAO) this.fieldBoreHeadVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldBoreHeadVAO);
+    if (!this.fieldBoreHeadBuf) this.fieldBoreHeadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBoreHeadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+    const stride = 24;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 16);
+    gl.bindVertexArray(null);
+    this.drawFieldVectorArrowSet(this.fieldBoreHeadVAO, this.fieldBoreHeadCount, o, 0.46);
   }
 
   drawFieldDashes(o) {

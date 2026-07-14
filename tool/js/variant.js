@@ -516,6 +516,7 @@ const SOLENOID_UI = {
   fieldLineCount: 7,         // parallel bore lines with open flaring ends
   fieldBoreOpacity: 0.15,   // inside-coil field: starts faint, raised while explaining
   topCoilOpacity: 1.0,      // front copper over the bore lines: 1 = solid, <1 reveals the parallel field inside
+  conductorOpacity: 1.0,    // current (conductor) overlay fade: 1 = full, 0 = hidden (used by the 'inside' transition)
   fieldLineThickness: 1.6,
   fieldMotionThickness: 0.65,
   currentIndicatorColor: '#ffc875',
@@ -527,7 +528,12 @@ const SOLENOID_PARAMS = {
   fieldModel: 'barMagnet',   // two poles at the bore ends; no filings here
   currentA: 30,
   currentMode: 'dc',
-  currentDir: 1,
+  // Conventional current must flow + terminal -> - terminal (out of the + stud,
+  // through switch + circuit, up the helix, back to the - stud). That physical
+  // direction is dir = -1 here; by the right-hand rule for this winding it puts
+  // the N pole at the BOTTOM end of the bore (field points down). dir flips both
+  // the conductor flow AND the field together, so they always correspond.
+  currentDir: -1,
   currentAutoAlign: false,
   sprinkleCount: 1,
   strayCount: 0,
@@ -561,14 +567,19 @@ export const SOLENOID_PRESETS = [
     // behind it for a 3D "inside the tube" read. Raise fieldBoreOpacity /
     // lower topCoilOpacity live to push the interior field brighter.
     name: 'Inside the solenoid',
-    hint: 'Conductor overlay off; the parallel field inside the coil fades up behind the front copper.',
+    hint: 'Conductor comets dissolve off while the parallel field inside the coil fades up behind the front copper.',
     duration: 16,
+    // Ease these keys from their current values instead of snapping (comets
+    // fade via conductorOpacity → 0; the bore field fades up as the front
+    // copper thins). presetFollow drives it over uiTransitionDur seconds.
+    uiTransition: ['conductorOpacity', 'fieldBoreOpacity', 'topCoilOpacity', 'fieldLineOpacity'],
+    uiTransitionDur: 1.4,
     ui: {
       ...SOLENOID_UI,
-      showCurrentComets: false,
-      showCurrentCometHeads: false,
-      showCurrentPulses: false,
-      showCurrentArrows: false,
+      currentOn: true,              // steady field to explain (no tap/timeline needed)
+      showCurrentComets: true,      // kept on so they can FADE (conductorOpacity), not snap off
+      showCurrentCometHeads: true,
+      conductorOpacity: 0.0,        // target: conductor overlay fully faded out
       fieldLineOpacity: 0.65,
       fieldBoreOpacity: 0.9,
       topCoilOpacity: 0.5,
@@ -592,7 +603,11 @@ const SOLENOID_VARIANT = {
   boreRadiusPx: 85,
   currentOverlay: { path: SOLENOID_PATH },
   currentDirectionText(dir) {
-    return dir < 0 ? 'current reversed (field points down)' : 'current forward (field points up)';
+    // dir = -1 is the physical default: current out of + into -, N pole at the
+    // bottom end of the bore. dir = +1 reverses both the flow and the field.
+    return dir < 0
+      ? 'current + → − (N pole at bottom)'
+      : 'current − → + (N pole at top)';
   },
   params: SOLENOID_PARAMS,
   presets: SOLENOID_PRESETS,

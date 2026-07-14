@@ -134,6 +134,7 @@ function handleFrame(m) {
   compassOrbitFollow(m);
   compassTraceFollow(m);
   turnsFollow(m);
+  presetFollow(m);
 }
 
 // Film-safe flow speeds: cap the dash advance below ~42% of its spacing per
@@ -529,6 +530,29 @@ function drawFrame(m, {
       opacity: app.ui.fieldBoreOpacity ?? 0.15,
       intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
     });
+    // Direction on the interior field: comets + heads stream along the bore
+    // lines the same way as the exterior loops. Faded in step with the reveal
+    // (scaled by fieldBoreOpacity) so it appears as the inside field is shown.
+    if (app.ui.showFieldComets) {
+      const boreReveal = Math.min(1, (app.ui.fieldBoreOpacity ?? 0.15) * 1.4);
+      const boreFlow = {
+        H: o.H,
+        res: o.res,
+        jitterPx: [0, 0],
+        dir: effectiveDir,
+        time: tFld,
+        color: hexToRgb(app.ui.fieldMotionColor),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength) * boreReveal,
+        speed: filmSafeFieldSpeed(),
+        spacing: app.ui.fieldMotionSpacing,
+        pulseWidth: app.ui.fieldPulseWidth,
+        tail: app.ui.fieldCometTail,
+        widthFrac: app.ui.fieldMotionThickness,
+        cometHeadSize: app.ui.fieldCometHeadSize,
+      };
+      app.overlays.drawFieldBoreFlow(boreFlow);
+      if (app.ui.showFieldCometHeads) app.overlays.drawFieldBoreHeads(boreFlow);
+    }
     // …then draw the copper coil a SECOND time over the bore lines. The front
     // winding lands back on top so the interior field reads as being INSIDE
     // the tube (3D depth). Lowering topCoilOpacity thins the front copper to
@@ -554,7 +578,12 @@ function drawFrame(m, {
       cometHeadSize: app.ui.currentCometHeadSize,
       widthFrac: Math.min(1, Math.max(0.12, app.ui.currentTrackWidth / 18)),
     };
-    const pulseIntensity = indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentIndicatorStrength);
+    // conductorOpacity fades the whole current (conductor) overlay smoothly —
+    // used by the 'Inside the solenoid' transition to dissolve the flow comets
+    // off the winding instead of snapping them off.
+    const condFade = Math.max(0, Math.min(1, app.ui.conductorOpacity ?? 1));
+    const pulseIntensity = indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentIndicatorStrength) * condFade;
+    const arrowIntensity = indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentArrowStrength) * condFade;
     if (app.ui.showCurrentPulses) {
       app.overlays.drawCurrentDashes({
         ...currentBase,
@@ -573,14 +602,14 @@ function drawFrame(m, {
       app.overlays.drawCurrentCometHeads({
         ...currentBase,
         color: hexToRgb(app.ui.currentArrowColor ?? app.ui.currentIndicatorColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentArrowStrength),
+        intensity: arrowIntensity,
       });
     }
     if (app.ui.showCurrentArrows) {
       app.overlays.drawCurrentArrows({
         ...currentBase,
         color: hexToRgb(app.ui.currentArrowColor ?? app.ui.currentIndicatorColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.currentArrowStrength),
+        intensity: arrowIntensity,
       });
     }
   }
@@ -1035,6 +1064,28 @@ function turnsFollow(m) {
   if (p >= 1) turnsAnim = null;
 }
 
+// Smoothly ease a set of numeric UI values from their pre-preset state to the
+// preset's targets (set up by loadPreset when the preset carries `uiTransition`)
+// so a preset like 'Inside the solenoid' fades in instead of snapping.
+let presetAnim = null;
+function presetFollow(m) {
+  const pa = presetAnim;
+  if (!pa) return;
+  if (pa.t0 == null || m.time < pa.t0) pa.t0 = m.time;
+  const p = Math.min(1, (m.time - pa.t0) / pa.dur);
+  const e = p * p * (3 - 2 * p);            // smoothstep ease in/out
+  for (const k of Object.keys(pa.to)) {
+    app.ui[k] = pa.from[k] + (pa.to[k] - pa.from[k]) * e;
+  }
+  const now = performance.now();
+  if (p >= 1 || now - pa.lastPanel > 150) {
+    pa.lastPanel = now;
+    buildPanel(document.getElementById('panel'), app);
+    syncCurrentSwitch();                 // buildPanel rebuilds the switch — keep it in sync
+  }
+  if (p >= 1) presetAnim = null;
+}
+
 app.liveTap = () => {
   app.worker.postMessage({ type: 'tap', opts: { strength: app.params.tapStrength } });
   logLive({ type: 'tap', strength: app.params.tapStrength });
@@ -1103,15 +1154,26 @@ function loadPreset(p) {
     rebuildHomography();
     if (app.calUI?.active) app.calUI.position();
   }
+  // Smooth-transition presets: snapshot the pre-preset value of each key in
+  // p.uiTransition so presetFollow can ease it to the preset target.
+  const tKeys = p.uiTransition;
+  const fromVals = tKeys?.length ? Object.fromEntries(tKeys.map((k) => [k, app.ui[k] ?? 0])) : null;
   app.ui.currentOn = p.ui?.currentOn ?? false;
   if (p.ui) Object.assign(app.ui, p.ui);
+  if (fromVals) {
+    const toVals = {};
+    for (const k of tKeys) { toVals[k] = app.ui[k]; app.ui[k] = fromVals[k]; }
+    presetAnim = { t0: null, dur: p.uiTransitionDur ?? 1.2, from: fromVals, to: toVals, lastPanel: 0 };
+  } else {
+    presetAnim = null;
+  }
   setCanvasResolution(app.ui.canvasRes ?? 'native');
   app.takeDuration = p.duration;
   rebuildFieldOverlay();
   rebuildCurrentOverlay();
   app.overlays.buildGrid(app.cal.sheetW, app.cal.sheetH);
-  syncCurrentSwitch();
   buildPanel(document.getElementById('panel'), app); // reflect new params
+  syncCurrentSwitch();                                // after buildPanel — it rebuilds the switch
   timelineChanged(true);
 }
 app.loadPreset = loadPreset;
