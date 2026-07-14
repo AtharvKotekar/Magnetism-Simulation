@@ -512,7 +512,7 @@ const SOLENOID_UI = {
   fieldMotionColor: '#bfe3ff',
   fieldArrowColor: '#bfe3ff',
   fieldLineStrength: 2.2,
-  fieldLineOpacity: 0.5,
+  fieldLineOpacity: 0.72,
   fieldLineCount: 7,         // parallel bore lines with open flaring ends
   fieldBoreOpacity: 0.60,    // parallel bore lines shown over the coil (3D underlay)
   fieldLineThickness: 1.6,

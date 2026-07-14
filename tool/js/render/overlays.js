@@ -1147,47 +1147,46 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Solenoid field, demonstration style. INTERIOR: straight PARALLEL lines
-    // through the bore. OPEN ENDS: each line flares out of the poles
-    // (diverging above N, converging below S) and ends in open space -- the
-    // classic textbook "field escaping the ends". Plus big return loops on
-    // each side for the external field.
+    // Physics-correct solenoid field = STREAMLINES (level sets of the stream
+    // function psi = h(n)*w(u)). Inside the bore the level sets are straight
+    // PARALLEL lines (dense, uniform); past the poles they balloon out and
+    // loop back -> CONTINUOUS closed field lines that spread outside like a
+    // bar magnet and never cross. Drawn ON TOP of the coil so the parallel
+    // interior reads clearly.
     const Lh = L / 2;
+    const na = 3.4 * boreR, al = 1.6, Sw = 1.15 * Lh, tm = 2.6;
+    const hFn = (n) => n * Math.exp(-Math.pow(Math.abs(n) / na, al));
+    const hpFn = (n) => (Math.abs(n) < 1e-9 ? 1
+      : Math.exp(-Math.pow(Math.abs(n) / na, al)) * (1 - al * Math.pow(Math.abs(n) / na, al)));
+    const wFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sw, tm));
+    const wpFn = (u) => (Math.abs(u) < 1e-12 ? 0
+      : -wFn(u) * (tm / Sw) * Math.pow(Math.abs(u) / Sw, tm - 1) * Math.sign(u));
+    const step = pxToM * 4;
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
-    const qbez = (p0, p1, p2, seg) => {
-      const out = [];
-      for (let i = 0; i <= seg; i++) {
-        const t = i / seg, mt = 1 - t;
-        out.push({ u: mt * mt * p0.u + 2 * mt * t * p1.u + t * t * p2.u,
-                   n: mt * mt * p0.n + 2 * mt * t * p1.n + t * t * p2.n });
+    for (const seed of [0.14, 0.30, 0.46, 0.62, 0.78]) {
+      let n = seed * boreR, u = 0;
+      const sN = n, sU = u;
+      let tN = -hFn(n) * wpFn(u), tU = hpFn(n) * wFn(u);
+      if (tU > 0) { tN = -tN; tU = -tU; }
+      const pts = [{ n, u }];
+      for (let i = 0; i < 40000; i++) {
+        const dir = (nn, uu) => {
+          let dn = -hFn(nn) * wpFn(uu), du = hpFn(nn) * wFn(uu);
+          if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
+          const m = Math.max(1e-12, Math.hypot(dn, du));
+          return [dn / m, du / m];
+        };
+        const k1 = dir(n, u);
+        const k2 = dir(n + k1[0] * step / 2, u + k1[1] * step / 2);
+        const k3 = dir(n + k2[0] * step / 2, u + k2[1] * step / 2);
+        const k4 = dir(n + k3[0] * step, u + k3[1] * step);
+        const dn = step / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+        const du = step / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+        n += dn; u += du; tN = dn; tU = du;
+        pts.push({ n, u });
+        if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
       }
-      return out;
-    };
-    const M = Math.max(3, Math.round(opts.rings ?? 7));   // parallel bore lines
-    const reach = Lh * 0.9, K = 2.4;
-    for (let i = 0; i < M; i++) {
-      const fx = M === 1 ? 0 : (i - (M - 1) / 2) / ((M - 1) / 2);
-      const xi = fx * boreR * 0.82, xo = xi * K;
-      const seq = [];
-      // bottom open end (below S) curving up into the bore
-      for (const p of qbez({ u: Lh + reach, n: xo }, { u: Lh + reach * 0.55, n: xi }, { u: Lh, n: xi }, 22)) seq.push(p);
-      // straight parallel interior (bottom -> top)
-      seq.push({ u: -Lh, n: xi });
-      // top open end (above N), flaring out
-      for (const p of qbez({ u: -Lh, n: xi }, { u: -Lh - reach * 0.55, n: xi }, { u: -Lh - reach, n: xo }, 22)) seq.push(p);
-      addClipped(seq.map((p) => emit(p.u, p.n)));
-    }
-    // big external return loops (half-ellipse C-shapes on each side)
-    for (let k = 0; k < 2; k++) {
-      const W = boreR * (2.4 + 1.6 * k), H = Lh + Lh * (0.5 + 0.35 * k);
-      for (const side of [1, -1]) {
-        const pts = [];
-        for (let j = 0; j <= 120; j++) {
-          const a = -Math.PI / 2 + Math.PI * (j / 120);
-          pts.push(emit(H * Math.sin(a), side * W * Math.cos(a)));
-        }
-        addClipped(pts);
-      }
+      for (const side of [1, -1]) addClipped(pts.map((p) => emit(p.u, side * p.n)));
     }
     const boreLines = [];
     this._solenoidBoreLines = boreLines;
