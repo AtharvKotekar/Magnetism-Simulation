@@ -135,9 +135,18 @@ re-measure rather than eyeballing.
 ## After code changes
 
 Run `graphify update .` (AST-only, no API cost) to keep `graphify-out/` fresh.
-- **Solenoid** (no filings) — served from `solenoid/`, layers from Solenoid.svg
-  (image0 scene with circuit baked in, image2 full-frame circuit occluder,
-  image1 placeholder mask). Field overlay `fieldOverlay: solenoid` generates
-  straight bore lines + return ovals from the coilLeft/coilRight pole pins
-  and `boreRadiusPx`; the current path traces the whole circuit incl. a
-  20-turn helix. No sprinkle/tap events in its presets.
+- **Solenoid** (no filings) — served from `solenoid/`, layers from SOLENOID.svg
+  (image0 full scene, image1 conductor+components layer → extracted to
+  image2 as the full-frame occluder so field lines draw behind the copper,
+  image1 placeholder mask). The scene is a VERTICAL helical coil on the left,
+  a 9V battery (− left / + right studs) centre, and a telegraph-key switch
+  right; the circuit loops + stud → switch → down the right → along the bottom
+  → coil bottom → UP through ~18 helix turns → coil top → wavy wire → − stud.
+  Calibration poles are the coil's TOP (N) and BOTTOM (S) ends (`coilLeft`/
+  `coilRight` at x≈700), `boreRadiusPx` ≈ 85. Field overlay
+  `fieldOverlay: solenoid` draws straight parallel bore lines through the
+  coil + closed loops that exit one pole and return to the other (direction
+  by `currentDir`). `SOLENOID_PATH` is a parametric helix (front arcs
+  visible, back arcs `under=1`) spliced to copper-centroid-snapped wire
+  segments — regenerate with scratchpad `path_gen.py` if the keyframe
+  changes. No sprinkle/tap events in its presets.
