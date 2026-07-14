@@ -1155,25 +1155,50 @@ export class Overlays {
     // interior reads clearly.
     const Lh = L / 2;
     const na = 3.4 * boreR, al = 1.6, tm = 2.6;
-    const Sd = 0.55 * Lh;                 // flare decay length BEYOND the coil ends
+    const Sd = 1.05 * Lh;                 // flat-top decay BEYOND the ends (near-axis lines)
+    const Sg = 1.38 * Lh;                 // gaussian axial scale (far-radius return -> bulge)
+    const gLo = 1.55 * boreR, gHi = 3.9 * boreR;  // radius band blending flat-top -> gaussian
     const hFn = (n) => n * Math.exp(-Math.pow(Math.abs(n) / na, al));
     const hpFn = (n) => (Math.abs(n) < 1e-9 ? 1
       : Math.exp(-Math.pow(Math.abs(n) / na, al)) * (1 - al * Math.pow(Math.abs(n) / na, al)));
-    // Flat-top axial window: w = 1 for |u| <= Lh, so inside the coil the stream
-    // function is psi = h(n) and its level sets are EXACTLY straight, parallel
-    // lines (n = const) over the whole coil length. Streamlines only start to
-    // flare past the ends (|u| > Lh) — so every field line enters/exits at the
-    // pole faces and none crosses the coil's side wall.
-    const wFn = (u) => {
+    // Axial window blended by RADIUS. Near the axis (n < gLo) it is a FLAT-TOP
+    // (w = 1 over |u| <= Lh) so the bore streamlines are exactly straight and
+    // parallel and only flare past the pole faces — nothing crosses the side
+    // wall. Far out (n > gHi, the return path) it becomes a GAUSSIAN so the
+    // exterior loops bulge outward smoothly like a bar magnet instead of running
+    // straight (a "racetrack"). psi = h(n) * W(u, n).
+    const wfFn = (u) => {
       const a = Math.abs(u);
       return a <= Lh ? 1 : Math.exp(-Math.pow((a - Lh) / Sd, tm));
     };
-    const wpFn = (u) => {
+    const wfpFn = (u) => {
       const a = Math.abs(u);
       if (a <= Lh) return 0;
       const w = Math.exp(-Math.pow((a - Lh) / Sd, tm));
       return -w * (tm / Sd) * Math.pow((a - Lh) / Sd, tm - 1) * Math.sign(u);
     };
+    const wgFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sg, tm));
+    const wgpFn = (u) => (Math.abs(u) < 1e-12 ? 0
+      : -wgFn(u) * (tm / Sg) * Math.pow(Math.abs(u) / Sg, tm - 1) * Math.sign(u));
+    const gN = (n) => {
+      let s = (Math.abs(n) - gLo) / (gHi - gLo);
+      s = s < 0 ? 0 : s > 1 ? 1 : s;
+      return s * s * (3 - 2 * s);                // smoothstep flat-top -> gaussian
+    };
+    const gpN = (n) => {
+      const a = Math.abs(n);
+      if (a <= gLo || a >= gHi) return 0;
+      const s = (a - gLo) / (gHi - gLo);
+      return (6 * s - 6 * s * s) / (gHi - gLo) * Math.sign(n);
+    };
+    const Wfn = (u, n) => { const g = gN(n); return (1 - g) * wfFn(u) + g * wgFn(u); };
+    const WuFn = (u, n) => { const g = gN(n); return (1 - g) * wfpFn(u) + g * wgpFn(u); };
+    const WnFn = (u, n) => gpN(n) * (wgFn(u) - wfFn(u));
+    // Streamline tangent = rot90(grad psi) = (-dpsi/du, dpsi/dn), psi = h(n)W(u,n).
+    const psiTangent = (n, u) => [
+      -hFn(n) * WuFn(u, n),                             // -dpsi/du
+      hpFn(n) * Wfn(u, n) + hFn(n) * WnFn(u, n),        //  dpsi/dn
+    ];
     const step = pxToM * 4;
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const clipRuns = (pp) => {
@@ -1187,12 +1212,12 @@ export class Overlays {
     for (const seed of [0.14, 0.30, 0.46, 0.62, 0.78]) {
       let n = seed * boreR, u = 0;
       const sN = n, sU = u;
-      let tN = -hFn(n) * wpFn(u), tU = hpFn(n) * wFn(u);
+      let [tN, tU] = psiTangent(n, u);
       if (tU > 0) { tN = -tN; tU = -tU; }
       const pts = [{ n, u }];
       for (let i = 0; i < 40000; i++) {
         const dir = (nn, uu) => {
-          let dn = -hFn(nn) * wpFn(uu), du = hpFn(nn) * wFn(uu);
+          let [dn, du] = psiTangent(nn, uu);
           if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
           const m = Math.max(1e-12, Math.hypot(dn, du));
           return [dn / m, du / m];
