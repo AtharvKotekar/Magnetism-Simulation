@@ -514,7 +514,7 @@ const SOLENOID_UI = {
   fieldLineStrength: 2.2,
   fieldLineOpacity: 0.5,
   fieldLineCount: 10,        // -> 5 nested return loops per side
-  fieldBoreOpacity: 0.45,    // parallel bore lines shown over the coil (3D underlay)
+  fieldBoreOpacity: 0.60,    // parallel bore lines shown over the coil (3D underlay)
   fieldLineThickness: 1.6,
   fieldMotionThickness: 0.65,
   currentIndicatorColor: '#ffc875',

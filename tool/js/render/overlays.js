@@ -1057,18 +1057,6 @@ export class Overlays {
       }
     }
 
-    const boreVerts = [];
-    for (const bl of (this._solenoidBoreLines || [])) pushThickPlaneLine(bl, bandHalfWidth * 0.8, boreVerts, []);
-    this.fieldBoreCount = boreVerts.length / 2;
-    if (!this.fieldBoreVAO) this.fieldBoreVAO = gl.createVertexArray();
-    gl.bindVertexArray(this.fieldBoreVAO);
-    if (!this.fieldBoreBuf) this.fieldBoreBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBoreBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boreVerts), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null);
-    this._solenoidBoreLines = null;
     this.fieldVectorLines = lines;
     this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
   }
@@ -1227,6 +1215,18 @@ export class Overlays {
         }
       }
     }
+    const boreVerts = [];
+    for (const bl of (this._solenoidBoreLines || [])) pushThickPlaneLine(bl, bandHalfWidth * 0.8, boreVerts, []);
+    this.fieldBoreCount = boreVerts.length / 2;
+    if (!this.fieldBoreVAO) this.fieldBoreVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldBoreVAO);
+    if (!this.fieldBoreBuf) this.fieldBoreBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBoreBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boreVerts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this._solenoidBoreLines = null;
     this.fieldVectorLines = lines;
     this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
   }
