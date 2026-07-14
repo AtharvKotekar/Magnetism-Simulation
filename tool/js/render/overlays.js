@@ -1154,52 +1154,10 @@ export class Overlays {
     // bar magnet and never cross. Drawn ON TOP of the coil so the parallel
     // interior reads clearly.
     const Lh = L / 2;
-    const na = 3.4 * boreR, al = 1.6, tm = 2.6;
-    const Sd = 1.05 * Lh;                 // flat-top decay BEYOND the ends (near-axis lines)
-    const Sg = 1.38 * Lh;                 // gaussian axial scale (far-radius return -> bulge)
-    const gLo = 1.55 * boreR, gHi = 3.9 * boreR;  // radius band blending flat-top -> gaussian
-    const hFn = (n) => n * Math.exp(-Math.pow(Math.abs(n) / na, al));
-    const hpFn = (n) => (Math.abs(n) < 1e-9 ? 1
-      : Math.exp(-Math.pow(Math.abs(n) / na, al)) * (1 - al * Math.pow(Math.abs(n) / na, al)));
-    // Axial window blended by RADIUS. Near the axis (n < gLo) it is a FLAT-TOP
-    // (w = 1 over |u| <= Lh) so the bore streamlines are exactly straight and
-    // parallel and only flare past the pole faces — nothing crosses the side
-    // wall. Far out (n > gHi, the return path) it becomes a GAUSSIAN so the
-    // exterior loops bulge outward smoothly like a bar magnet instead of running
-    // straight (a "racetrack"). psi = h(n) * W(u, n).
-    const wfFn = (u) => {
-      const a = Math.abs(u);
-      return a <= Lh ? 1 : Math.exp(-Math.pow((a - Lh) / Sd, tm));
-    };
-    const wfpFn = (u) => {
-      const a = Math.abs(u);
-      if (a <= Lh) return 0;
-      const w = Math.exp(-Math.pow((a - Lh) / Sd, tm));
-      return -w * (tm / Sd) * Math.pow((a - Lh) / Sd, tm - 1) * Math.sign(u);
-    };
-    const wgFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sg, tm));
-    const wgpFn = (u) => (Math.abs(u) < 1e-12 ? 0
-      : -wgFn(u) * (tm / Sg) * Math.pow(Math.abs(u) / Sg, tm - 1) * Math.sign(u));
-    const gN = (n) => {
-      let s = (Math.abs(n) - gLo) / (gHi - gLo);
-      s = s < 0 ? 0 : s > 1 ? 1 : s;
-      return s * s * (3 - 2 * s);                // smoothstep flat-top -> gaussian
-    };
-    const gpN = (n) => {
-      const a = Math.abs(n);
-      if (a <= gLo || a >= gHi) return 0;
-      const s = (a - gLo) / (gHi - gLo);
-      return (6 * s - 6 * s * s) / (gHi - gLo) * Math.sign(n);
-    };
-    const Wfn = (u, n) => { const g = gN(n); return (1 - g) * wfFn(u) + g * wgFn(u); };
-    const WuFn = (u, n) => { const g = gN(n); return (1 - g) * wfpFn(u) + g * wgpFn(u); };
-    const WnFn = (u, n) => gpN(n) * (wgFn(u) - wfFn(u));
-    // Streamline tangent = rot90(grad psi) = (-dpsi/du, dpsi/dn), psi = h(n)W(u,n).
-    const psiTangent = (n, u) => [
-      -hFn(n) * WuFn(u, n),                             // -dpsi/du
-      hpFn(n) * Wfn(u, n) + hFn(n) * WnFn(u, n),        //  dpsi/dn
-    ];
-    const step = pxToM * 4;
+    // Field geometry is built PROCEDURALLY (below) rather than by tracing a
+    // stream function: the analytic streamlines developed necks/shoulders where
+    // the straight interior met the curved exterior. Straight bore lines +
+    // smooth superellipse lobes are wiggle-free by construction.
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const clipRuns = (pp) => {
       const out = []; let run = [];
@@ -1208,51 +1166,37 @@ export class Overlays {
       flush();
       return out;
     };
-    const boreLines = [];   // interior (bore) portions -> revealed on top
-    for (const seed of [0.14, 0.30, 0.46, 0.62, 0.78]) {
-      let n = seed * boreR, u = 0;
-      const sN = n, sU = u;
-      let [tN, tU] = psiTangent(n, u);
-      if (tU > 0) { tN = -tN; tU = -tU; }
-      const pts = [{ n, u }];
-      for (let i = 0; i < 40000; i++) {
-        const dir = (nn, uu) => {
-          let [dn, du] = psiTangent(nn, uu);
-          if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
-          const m = Math.max(1e-12, Math.hypot(dn, du));
-          return [dn / m, du / m];
-        };
-        const k1 = dir(n, u);
-        const k2 = dir(n + k1[0] * step / 2, u + k1[1] * step / 2);
-        const k3 = dir(n + k2[0] * step / 2, u + k2[1] * step / 2);
-        const k4 = dir(n + k3[0] * step, u + k3[1] * step);
-        const dn = step / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
-        const du = step / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
-        n += dn; u += du; tN = dn; tU = du;
-        pts.push({ n, u });
-        if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
-      }
-      // Split each CONTINUOUS streamline at the bore wall (n = boreR): the
-      // INTERIOR part (straight/parallel inside the coil) goes to the bore
-      // layer, the EXTERIOR part (the loops) stays behind the coil. The
-      // boundary point is shared by both, so the interior lines stay
-      // CONNECTED to the curved exterior loops.
+    // Inside the coil the field is uniform -> straight, parallel bore lines.
+    // Outside, each line returns to the other pole as a smooth SUPERELLIPSE
+    // lobe: n(u) = n_i + b*(1 - |u/Lh|^p)^(1/p). It meets the straight interior
+    // EXACTLY at the pole (u = ±Lh, n = n_i) so the two stay connected, and it
+    // has no neck/shoulder/wiggle. nMax grows with n_i so the lobes nest
+    // without crossing. The rounded pole cap tucks behind the coil occluder.
+    const NL = Math.max(3, Math.min(9, Math.round(opts.rings ?? 6)));
+    const pEll = 2.4;                                     // superellipse roundness
+    const outerMax = Math.max(2.4 * boreR, rMax * 0.6);   // outermost lobe reach
+    const boreLines = [];
+    for (let i = 0; i < NL; i++) {
+      const f = NL === 1 ? 0 : i / (NL - 1);
+      const n_i = boreR * (0.14 + 0.74 * f);              // near axis -> bore wall
+      const nMax = boreR * 1.6 + (outerMax - boreR * 1.6) * (f * f);
+      const b = nMax - n_i;
       for (const side of [1, -1]) {
-        const em = pts.map((p) => ({ ...emit(p.u, side * p.n), interior: p.n <= boreR && Math.abs(p.u) <= Lh }));
-        let run = [em[0]];
-        const flushRun = (isInterior) => {
-          if (run.length < 2) return;
-          if (isInterior) { for (const r of clipRuns(run)) boreLines.push(r); }
-          else addClipped(run);
-        };
-        for (let i = 1; i < em.length; i++) {
-          run.push(em[i]);
-          if (em[i].interior !== em[i - 1].interior) {
-            flushRun(em[i - 1].interior);
-            run = [em[i]];                 // new run starts at the shared boundary
-          }
+        // interior straight bore line — wound top -> bottom so its flow runs
+        // toward the N end (dir handles the sign); revealed on top.
+        const bore = [];
+        for (let k = 0; k <= 40; k++) bore.push(emit(-Lh + 2 * Lh * (k / 40), side * n_i));
+        for (const r of clipRuns(bore)) boreLines.push(r);
+        // exterior superellipse lobe, wound bottom -> top (up the outside) so
+        // its flow continues the interior's into one closed loop — bulge out.
+        const seg = 160, lobe = [];
+        for (let k = 0; k <= seg; k++) {
+          const u = Lh - 2 * Lh * (k / seg);
+          const base = Math.max(0, 1 - Math.pow(Math.abs(u / Lh), pEll));
+          const n = n_i + b * Math.pow(base, 1 / pEll);
+          lobe.push(emit(u, side * n));
         }
-        flushRun(em[em.length - 1].interior);
+        addClipped(lobe);
       }
     }
     this._solenoidBoreLines = boreLines;
