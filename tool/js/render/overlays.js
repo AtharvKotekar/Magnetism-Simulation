@@ -723,6 +723,7 @@ export class Overlays {
     const perSide = Math.max(1, Math.round(nLines / 2));
     const firstRadius = Math.max(0.0008, opts.firstRadius ?? 0.008);
     const gapRatio = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
+    const falloffCurve = Math.max(0.45, opts.falloffCurve ?? 1);
     const pxToM = Math.max(1e-6, opts.pxToM ?? (rMax / 1200));
     const thickness = Math.max(0.15, opts.thickness ?? 1);
     const arrowDensity = Math.max(0, opts.arrowDensity ?? 1);
@@ -778,9 +779,16 @@ export class Overlays {
     // perpendicular bisector and reads as a near-straight center line.
     const xMax = sep * 0.47;
     const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
+    // falloffCurve warps the ring distribution: < 1 pulls the rings inward
+    // toward the conductors (denser near the holes; the big bisector-side
+    // circles that sit beyond the cardboard get drawn in — reads as a
+    // stronger field), 1 = the plain geometric spacing. Line count is
+    // unchanged, so nothing is "born": the surge just reels the field in.
+    const fallWarp = 1 / falloffCurve;
     for (let k = 0; k < perSide; k++) {
-      const frac = perSide === 1 ? 0
+      const fracRaw = perSide === 1 ? 0
         : denom > 1e-6 ? (Math.pow(gapRatio, k) - 1) / denom : k / (perSide - 1);
+      const frac = Math.pow(fracRaw, fallWarp);
       const near = Math.min(xMax, firstRadius + (xMax - firstRadius) * frac);
       const lam = Math.min(0.93, Math.max(0.001, near / Math.max(1e-6, sep - near)));
       const R = lam * sep / (1 - lam * lam);
