@@ -719,8 +719,14 @@ export class Overlays {
     const verts = [];
     const dashVerts = [];
     const arrowVerts = [];
-    const nLines = Math.max(2, Math.round(opts.rings ?? 12));
-    const perSide = Math.max(1, Math.round(nLines / 2));
+    // Fractional ring count: the outermost ring FADES in by the fractional
+    // part instead of popping when the count steps — so the surge growing
+    // the count reads as a smooth bloom, no line appearing from nowhere.
+    const ringsF = Math.max(2, opts.rings ?? 12);
+    const perSideF = Math.max(1, ringsF / 2);
+    const nFull = Math.floor(perSideF + 1e-6);
+    const ringFrac = perSideF - nFull;                 // 0 when integer
+    const perSideDraw = nFull + (ringFrac > 1e-4 ? 1 : 0);
     const firstRadius = Math.max(0.0008, opts.firstRadius ?? 0.008);
     const gapRatio = Math.max(1.01, opts.radiusMultiplier ?? 1.25);
     const falloffCurve = Math.max(0.45, opts.falloffCurve ?? 1);
@@ -757,10 +763,11 @@ export class Overlays {
       return [-(day * ia - dby * ib), dax * ia - dbx * ib];
     };
     const lines = [];
-    const addClipped = (pts) => {
+    const fades = [];                                  // per-line alpha (1 = solid)
+    const addClipped = (pts, fade = 1) => {
       let run = [];
       const flush = () => {
-        if (run.length > 2) lines.push(arcLengthPlane(run, pxToM));
+        if (run.length > 2) { lines.push(arcLengthPlane(run, pxToM)); fades.push(fade); }
         run = [];
       };
       for (const p of pts) {
@@ -778,16 +785,15 @@ export class Overlays {
     // ratio gapRatio between consecutive gaps; the last circle hugs the
     // perpendicular bisector and reads as a near-straight center line.
     const xMax = sep * 0.47;
-    const denom = Math.pow(gapRatio, Math.max(1, perSide - 1)) - 1;
-    // falloffCurve warps the ring distribution: < 1 pulls the rings inward
-    // toward the conductors (denser near the holes; the big bisector-side
-    // circles that sit beyond the cardboard get drawn in — reads as a
-    // stronger field), 1 = the plain geometric spacing. Line count is
-    // unchanged, so nothing is "born": the surge just reels the field in.
+    const denom = Math.pow(gapRatio, Math.max(1e-6, perSideF - 1)) - 1;
+    // falloffCurve warps the ring distribution (< 1 pulls rings inward), now
+    // active on the coil too; 1 = the plain geometric spacing.
     const fallWarp = 1 / falloffCurve;
-    for (let k = 0; k < perSide; k++) {
-      const fracRaw = perSide === 1 ? 0
-        : denom > 1e-6 ? (Math.pow(gapRatio, k) - 1) / denom : k / (perSide - 1);
+    for (let k = 0; k < perSideDraw; k++) {
+      const ringFade = k < nFull ? 1 : ringFrac;       // outermost ring fades
+      const fracRaw = perSideF <= 1 ? 0
+        : denom > 1e-6 ? Math.min(1, (Math.pow(gapRatio, k) - 1) / denom)
+          : k / Math.max(1e-6, perSideF - 1);
       const frac = Math.pow(fracRaw, fallWarp);
       const near = Math.min(xMax, firstRadius + (xMax - firstRadius) * frac);
       const lam = Math.min(0.93, Math.max(0.001, near / Math.max(1e-6, sep - near)));
@@ -811,7 +817,7 @@ export class Overlays {
         const tan = [-(probe.y - cy) / pr, (probe.x - cx) / pr];
         const ref = windRef(probe.x, probe.y);
         if (tan[0] * ref[0] + tan[1] * ref[1] < 0) pts.reverse();
-        addClipped(pts);
+        addClipped(pts, ringFade);
       }
     }
 
@@ -829,9 +835,16 @@ export class Overlays {
     if (nx * axisRef[0] + ny * axisRef[1] < 0) axisPts.reverse();
     addClipped(axisPts);
 
-    for (const line of lines) {
-      pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
-      if (arrowDensity > 0 && line.length > 1) {
+    // Solid rings go to the main buffers; the fading outermost ring goes to
+    // the fade buffers, drawn in a second pass at alpha * fieldFadeFactor.
+    const fadeVerts = [];
+    const fadeDashVerts = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const solid = fades[i] >= 0.999;
+      pushThickPlaneLine(line, bandHalfWidth,
+        solid ? verts : fadeVerts, solid ? dashVerts : fadeDashVerts);
+      if (solid && arrowDensity > 0 && line.length > 1) {
         const total = line[line.length - 1].s;
         for (let s = arrowSpacing * 0.7; s < total - arrowSpacing * 0.35; s += arrowSpacing) {
           const p = samplePlanePolyline(line, s);
@@ -840,8 +853,10 @@ export class Overlays {
         }
       }
     }
+    this.fieldFadeFactor = ringFrac > 1e-4 ? ringFrac : 1;
 
     this.fieldVectorLines = lines;
+    const dashStride = 16;
     this.fieldCount = verts.length / 2;
     if (!this.fieldVAO) this.fieldVAO = gl.createVertexArray();
     gl.bindVertexArray(this.fieldVAO);
@@ -852,13 +867,33 @@ export class Overlays {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
 
+    this.fieldFadeCount = fadeVerts.length / 2;
+    if (!this.fieldFadeVAO) this.fieldFadeVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldFadeVAO);
+    if (!this.fieldFadeBuf) this.fieldFadeBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldFadeBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(fadeVerts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
     this.fieldDashCount = dashVerts.length / 4;
     if (!this.fieldDashVAO) this.fieldDashVAO = gl.createVertexArray();
     gl.bindVertexArray(this.fieldDashVAO);
     if (!this.fieldDashBuf) this.fieldDashBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldDashBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(dashVerts), gl.STATIC_DRAW);
-    const dashStride = 16;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, dashStride, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, dashStride, 8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, dashStride, 12);
+    gl.bindVertexArray(null);
+
+    this.fieldFadeDashCount = fadeDashVerts.length / 4;
+    if (!this.fieldFadeDashVAO) this.fieldFadeDashVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldFadeDashVAO);
+    if (!this.fieldFadeDashBuf) this.fieldFadeDashBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldFadeDashBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(fadeDashVerts), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, dashStride, 0);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, dashStride, 8);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, dashStride, 12);
@@ -1257,6 +1292,12 @@ export class Overlays {
     const alpha = Math.min(0.98, Math.max(0, o.opacity ?? 0.32) * presence);
     gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], alpha);
     gl.drawArrays(gl.TRIANGLES, 0, this.fieldCount);
+    // fading outermost ring (coil surge smoothness) — same colour, scaled alpha
+    if (this.fieldFadeCount) {
+      gl.bindVertexArray(this.fieldFadeVAO);
+      gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], alpha * (this.fieldFadeFactor ?? 1));
+      gl.drawArrays(gl.TRIANGLES, 0, this.fieldFadeCount);
+    }
     gl.bindVertexArray(null);
   }
 
@@ -1289,6 +1330,13 @@ export class Overlays {
     const c = o.color || [0.55, 0.85, 1.0];
     gl.uniform3f(this.fdu.uColor, c[0], c[1], c[2]);
     gl.drawArrays(gl.TRIANGLES, 0, this.fieldDashCount);
+    // fading outermost ring's comets — same flow, intensity scaled by fade
+    if (this.fieldFadeDashCount) {
+      gl.bindVertexArray(this.fieldFadeDashVAO);
+      gl.uniform1f(this.fdu.uIntensity,
+        Math.min(3, Math.max(0, o.intensity ?? 1)) * (this.fieldFadeFactor ?? 1));
+      gl.drawArrays(gl.TRIANGLES, 0, this.fieldFadeDashCount);
+    }
     gl.bindVertexArray(null);
   }
 

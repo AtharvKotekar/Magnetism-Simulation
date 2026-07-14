@@ -183,14 +183,12 @@ export const COIL_PRESETS = [
     // 1.08 → 1.28, pulses speed to 2.35× and field motion to 1.7×, with
     // exactly ONE tap and no re-sprinkle.
     name: 'Coil surge stage 32→100 A',
-    hint: 'Base look at 32 A — record, then ⚡ Surge: the field reels inward and packs near the conductors (falloff 1.0→0.62), filings surge, one tap. Ring count stays 13 — nothing is born.',
+    hint: 'Base look at 32 A — record, then ⚡ Surge: rings bloom 10→13 (fading in smoothly) wider apart, filings surge, one tap.',
     duration: 20,
     ui: {
       ...COIL_UI,
       currentOn: true,
-      // full ring count from the start; the outer circles sit beyond the
-      // cardboard at base falloff and get reeled in on surge
-      fieldLineCount: 13,
+      fieldLineCount: 10,
       fieldRadiusMultiplier: 1.08,
       fieldFirstRadiusPx: 64,
       fieldMaxRadiusPx: 1520,
@@ -645,18 +643,19 @@ const COIL_VARIANT = {
     dur: 2.2,
     linesByTurns: { 1: 9, 2: 22, 3: 36 },
   },
-  // Coil surge (panel ⚡ button + 'Coil surge stage' preset): the ring COUNT
-  // stays fixed (13) so nothing is "born" — the whole field already exists,
-  // its outer circles sitting beyond the cardboard. The surge lowers the
-  // falloff curve, which reels those rings inward onto the board and packs
-  // them near the conductors: a field that fills in and strengthens.
+  // Coil surge (panel ⚡ button + 'Coil surge stage' preset): stronger
+  // current reads as MORE rings spaced WIDER. The ring count glides
+  // 10 → 13 as a FRACTIONAL value, so the coil builder fades the newest
+  // ring in by the fractional part — the bloom is smooth, no ring pops in
+  // from nowhere.
   surge: {
     label: '⚡ Surge to 100 A',
-    title: 'Continuous-shot move: ramp amplitude to 100 A in ~1.3 s — the field reels inward (falloff 1.0 → 0.62) and packs near the conductors, pulses to 2.35×, field motion to 1.7×, ONE tap, no re-sprinkle',
+    title: 'Continuous-shot move: ramp amplitude to 100 A in ~1.3 s — rings bloom 10 → 13 (fading in smoothly) spaced wider (1.08 → 1.28), pulses to 2.35×, field motion to 1.7×, ONE tap, no re-sprinkle',
     targetA: 100,
     dur: 1.3,   // snappy: the whole field change lands within ~1.2 s
     ui: {
-      fieldFalloffCurve: 0.62,
+      fieldLineCount: 13,
+      fieldRadiusMultiplier: 1.28,
       currentPulseSpeed: 2.35,
       fieldMotionSpeed: 1.70,
     },
