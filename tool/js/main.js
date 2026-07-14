@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v63';
-import { SceneLayers } from './render/scene.js?v=coil-v63';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v63';
-import { Overlays } from './render/overlays.js?v=coil-v63';
+import { createGL } from './render/gl.js?v=coil-v64';
+import { SceneLayers } from './render/scene.js?v=coil-v64';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v64';
+import { Overlays } from './render/overlays.js?v=coil-v64';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v63';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v63';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v64';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v64';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v63';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v63';
+import { PRESETS } from './ui/presets.js?v=coil-v64';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v64';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v63';
-import { CompassOverlay } from './render/compass.js?v=coil-v63';
+import { buildVariantConfig } from './variant.js?v=coil-v64';
+import { CompassOverlay } from './render/compass.js?v=coil-v64';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v63', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v64', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -422,8 +422,13 @@ function drawFrame(m, {
   if (o.shadows) app.filings.drawShadows(o);
   drawFilings();
   const showFieldMotion = app.ui.showFieldPulses || app.ui.showFieldComets;
-  if ((app.ui.showFieldLines || showFieldMotion || app.ui.showFieldArrows) &&
-      (app.ui.currentOn || currentAbs > 0.5)) {
+  // The solenoid defers this until AFTER the coil occluder so the continuous
+  // lines — including the straight parallel bore field — read clearly ON TOP
+  // of the winding, like the textbook diagram. Every other variant draws it
+  // behind the occluder for depth.
+  const drawFieldOverlay = () => {
+    if (!((app.ui.showFieldLines || showFieldMotion || app.ui.showFieldArrows) &&
+        (app.ui.currentOn || currentAbs > 0.5))) return;
     const fieldBase = {
       H: o.H,
       res: o.res,
@@ -487,7 +492,9 @@ function drawFrame(m, {
         speed: app.ui.fieldArrowSpeed,
       });
     }
-  }
+  };
+
+  if (app.variant.fieldOverlay !== 'solenoid') drawFieldOverlay();
 
   // Compass prop: on the paper above the filings, under the wire occluder
   // so the wire stays in front when they overlap.
@@ -506,19 +513,10 @@ function drawFrame(m, {
   app.scene.drawOccluder(app.ui.coilTurns ?? 1);
   drawOnMagnet();
 
-  // Solenoid: the parallel bore field, drawn faintly ON TOP of the coil so
-  // students see the field threading the winding (the 3D "lower layer").
-  if (app.variant.fieldOverlay === 'solenoid' && app.ui.showFieldLines &&
-      (app.ui.currentOn || currentAbs > 0.5)) {
-    app.overlays.drawFieldBore({
-      H: o.H,
-      res: o.res,
-      jitterPx: [0, 0],
-      color: hexToRgb(app.ui.fieldLineColor),
-      opacity: app.ui.fieldBoreOpacity ?? 0.18,
-      intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
-    });
-  }
+  // Solenoid: draw the whole field overlay now, ON TOP of the coil, so the
+  // continuous lines and the straight parallel bore field read clearly
+  // through the winding and emerge from the poles — the textbook diagram.
+  if (app.variant.fieldOverlay === 'solenoid') drawFieldOverlay();
 
   const showInd = indicator !== null ? indicator : app.ui.showIndicator;
   if (showInd) {
