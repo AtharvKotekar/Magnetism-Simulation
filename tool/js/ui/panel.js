@@ -278,6 +278,11 @@ export function buildPanel(root, app) {
       slider(b, 'Inside-coil opacity', 0, 1, 0.02, app.ui.fieldBoreOpacity ?? 0.15, '', (v) => {
         app.ui.fieldBoreOpacity = v;
       });
+      // Front copper drawn over the bore lines: lower it to reveal more of the
+      // parallel interior field while keeping it behind the winding (3D depth).
+      slider(b, 'Top coil opacity', 0, 1, 0.02, app.ui.topCoilOpacity ?? 1, '', (v) => {
+        app.ui.topCoilOpacity = v;
+      });
     }
     slider(b, 'Max radius', 120, 2200, 10, app.ui.fieldMaxRadiusPx, ' px', (v) => {
       app.ui.fieldMaxRadiusPx = v;

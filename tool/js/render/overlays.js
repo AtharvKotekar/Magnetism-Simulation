@@ -1163,6 +1163,14 @@ export class Overlays {
       : -wFn(u) * (tm / Sw) * Math.pow(Math.abs(u) / Sw, tm - 1) * Math.sign(u));
     const step = pxToM * 4;
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
+    const clipRuns = (pp) => {
+      const out = []; let run = [];
+      const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
+      for (const p of pp) { if (inside(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+      return out;
+    };
+    const boreLines = [];   // interior (bore) portions -> revealed on top
     for (const seed of [0.14, 0.30, 0.46, 0.62, 0.78]) {
       let n = seed * boreR, u = 0;
       const sN = n, sU = u;
@@ -1186,41 +1194,28 @@ export class Overlays {
         pts.push({ n, u });
         if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
       }
-      // EXTERIOR loops only (the field "around" the coil, drawn behind it for
-      // 3D depth): drop the straight interior run so nothing crosses the coil.
+      // Split each CONTINUOUS streamline at the bore wall (n = boreR): the
+      // INTERIOR part (straight/parallel inside the coil) goes to the bore
+      // layer, the EXTERIOR part (the loops) stays behind the coil. The
+      // boundary point is shared by both, so the interior lines stay
+      // CONNECTED to the curved exterior loops.
       for (const side of [1, -1]) {
-        let run = [];
-        const flush = () => { if (run.length > 2) addClipped(run.map((p) => emit(p.u, side * p.n))); run = []; };
-        for (const p of pts) {
-          if (p.n < boreR * 0.96 && Math.abs(p.u) < Lh) flush();   // interior: skip
-          else run.push(p);
+        const em = pts.map((p) => ({ ...emit(p.u, side * p.n), interior: p.n <= boreR }));
+        let run = [em[0]];
+        const flushRun = (isInterior) => {
+          if (run.length < 2) return;
+          if (isInterior) { for (const r of clipRuns(run)) boreLines.push(r); }
+          else addClipped(run);
+        };
+        for (let i = 1; i < em.length; i++) {
+          run.push(em[i]);
+          if (em[i].interior !== em[i - 1].interior) {
+            flushRun(em[i - 1].interior);
+            run = [em[i]];                 // new run starts at the shared boundary
+          }
         }
-        flush();
+        flushRun(em[em.length - 1].interior);
       }
-    }
-    // INTERIOR bore field: straight PARALLEL lines through the bore, elongated
-    // a little past the poles so they enter the coil cleanly (nothing curving
-    // over the winding). Drawn ON TOP at a SEPARATE adjustable opacity
-    // (fieldBoreOpacity) so the "inside" field can be revealed gradually.
-    const clipRuns = (pp) => {
-      const out = []; let run = [];
-      const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
-      for (const p of pp) { if (inside(p.x, p.y)) run.push(p); else flush(); }
-      flush();
-      return out;
-    };
-    const boreLines = [];
-    const NIN = 9, extPast = Lh * 0.16;
-    for (let i = 0; i < NIN; i++) {
-      const fx = NIN === 1 ? 0 : (i - (NIN - 1) / 2) / ((NIN - 1) / 2);
-      const bn = fx * boreR * 0.86;
-      const line = [];
-      const seg = 64;
-      for (let j = 0; j <= seg; j++) {
-        const u = -(Lh + extPast) + (2 * (Lh + extPast)) * (j / seg);
-        line.push(emit(u, bn));
-      }
-      for (const r of clipRuns(line)) boreLines.push(r);
     }
     this._solenoidBoreLines = boreLines;
 

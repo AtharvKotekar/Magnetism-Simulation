@@ -515,6 +515,7 @@ const SOLENOID_UI = {
   fieldLineOpacity: 0.55,
   fieldLineCount: 7,         // parallel bore lines with open flaring ends
   fieldBoreOpacity: 0.15,   // inside-coil field: starts faint, raised while explaining
+  topCoilOpacity: 1.0,      // front copper over the bore lines: 1 = solid, <1 reveals the parallel field inside
   fieldLineThickness: 1.6,
   fieldMotionThickness: 0.65,
   currentIndicatorColor: '#ffc875',
@@ -552,6 +553,29 @@ export const SOLENOID_PRESETS = [
     timeline: [
       { t: 0.8, type: 'current', on: true, amp: 30, mode: 'dc', rampDur: 1.4 },
     ],
+  },
+  {
+    // The "look inside" beat: kill the conductor comets so the eye moves off
+    // the winding, then reveal the straight PARALLEL field threading the bore.
+    // The front copper is thinned (topCoilOpacity) so the bore lines sit just
+    // behind it for a 3D "inside the tube" read. Raise fieldBoreOpacity /
+    // lower topCoilOpacity live to push the interior field brighter.
+    name: 'Inside the solenoid',
+    hint: 'Conductor overlay off; the parallel field inside the coil fades up behind the front copper.',
+    duration: 16,
+    ui: {
+      ...SOLENOID_UI,
+      showCurrentComets: false,
+      showCurrentCometHeads: false,
+      showCurrentPulses: false,
+      showCurrentArrows: false,
+      fieldLineOpacity: 0.65,
+      fieldBoreOpacity: 0.9,
+      topCoilOpacity: 0.5,
+    },
+    cal: { ...SOLENOID_CALIBRATION },
+    params: { ...SOLENOID_PARAMS, currentAutoAlign: false },
+    timeline: [],
   },
 ];
 

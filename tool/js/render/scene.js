@@ -133,12 +133,13 @@ export class SceneLayers {
     }
   }
 
-  drawOccluder(turns = 1) {
+  drawOccluder(turns = 1, opacity = 1) {
+    if (opacity <= 0) return;
     const gl = this.gl;
     const { tex, rect } = this.occluderFor(turns);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    this.drawQuad(tex, rect);
+    this.drawQuad(tex, rect, opacity);
   }
 
   // For the filings-only alpha pass: punch the occluder's silhouette OUT of

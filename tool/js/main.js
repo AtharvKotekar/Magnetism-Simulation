@@ -529,6 +529,12 @@ function drawFrame(m, {
       opacity: app.ui.fieldBoreOpacity ?? 0.15,
       intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
     });
+    // …then draw the copper coil a SECOND time over the bore lines. The front
+    // winding lands back on top so the interior field reads as being INSIDE
+    // the tube (3D depth). Lowering topCoilOpacity thins the front copper to
+    // reveal more of the parallel bore field — the paired adjuster to
+    // fieldBoreOpacity. topCoilOpacity = 1 → solid front winding.
+    app.scene.drawOccluder(app.ui.coilTurns ?? 1, app.ui.topCoilOpacity ?? 1);
   }
 
   const showInd = indicator !== null ? indicator : app.ui.showIndicator;
