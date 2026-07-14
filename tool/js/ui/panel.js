@@ -272,6 +272,13 @@ export function buildPanel(root, app) {
     slider(b, 'Ring opacity', 0.05, 1, 0.05, app.ui.fieldLineOpacity ?? 0.32, '', (v) => {
       app.ui.fieldLineOpacity = v;
     });
+    if (app.variant?.fieldOverlay === 'solenoid') {
+      // Reveal the straight parallel field INSIDE the coil gradually while
+      // explaining it — separate from the exterior loops behind the coil.
+      slider(b, 'Inside-coil opacity', 0, 1, 0.02, app.ui.fieldBoreOpacity ?? 0.15, '', (v) => {
+        app.ui.fieldBoreOpacity = v;
+      });
+    }
     slider(b, 'Max radius', 120, 2200, 10, app.ui.fieldMaxRadiusPx, ' px', (v) => {
       app.ui.fieldMaxRadiusPx = v;
       app.rebuildFieldOverlay();

@@ -1186,9 +1186,42 @@ export class Overlays {
         pts.push({ n, u });
         if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
       }
-      for (const side of [1, -1]) addClipped(pts.map((p) => emit(p.u, side * p.n)));
+      // EXTERIOR loops only (the field "around" the coil, drawn behind it for
+      // 3D depth): drop the straight interior run so nothing crosses the coil.
+      for (const side of [1, -1]) {
+        let run = [];
+        const flush = () => { if (run.length > 2) addClipped(run.map((p) => emit(p.u, side * p.n))); run = []; };
+        for (const p of pts) {
+          if (p.n < boreR * 0.96 && Math.abs(p.u) < Lh) flush();   // interior: skip
+          else run.push(p);
+        }
+        flush();
+      }
     }
+    // INTERIOR bore field: straight PARALLEL lines through the bore, elongated
+    // a little past the poles so they enter the coil cleanly (nothing curving
+    // over the winding). Drawn ON TOP at a SEPARATE adjustable opacity
+    // (fieldBoreOpacity) so the "inside" field can be revealed gradually.
+    const clipRuns = (pp) => {
+      const out = []; let run = [];
+      const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
+      for (const p of pp) { if (inside(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+      return out;
+    };
     const boreLines = [];
+    const NIN = 9, extPast = Lh * 0.16;
+    for (let i = 0; i < NIN; i++) {
+      const fx = NIN === 1 ? 0 : (i - (NIN - 1) / 2) / ((NIN - 1) / 2);
+      const bn = fx * boreR * 0.86;
+      const line = [];
+      const seg = 64;
+      for (let j = 0; j <= seg; j++) {
+        const u = -(Lh + extPast) + (2 * (Lh + extPast)) * (j / seg);
+        line.push(emit(u, bn));
+      }
+      for (const r of clipRuns(line)) boreLines.push(r);
+    }
     this._solenoidBoreLines = boreLines;
 
     for (const line of lines) {
