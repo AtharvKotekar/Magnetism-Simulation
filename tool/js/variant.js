@@ -531,7 +531,7 @@ const SOLENOID_PARAMS = {
   // Conventional current must flow + terminal -> - terminal (out of the + stud,
   // through switch + circuit, up the helix, back to the - stud). That physical
   // direction is dir = -1 here; by the right-hand rule for this winding it puts
-  // the N pole at the BOTTOM end of the bore (field points down). dir flips both
+  // the N pole at the TOP end of the bore (field exits the top). dir flips both
   // the conductor flow AND the field together, so they always correspond.
   currentDir: -1,
   currentAutoAlign: false,
@@ -603,11 +603,12 @@ const SOLENOID_VARIANT = {
   boreRadiusPx: 85,
   currentOverlay: { path: SOLENOID_PATH },
   currentDirectionText(dir) {
-    // dir = -1 is the physical default: current out of + into -, N pole at the
-    // bottom end of the bore. dir = +1 reverses both the flow and the field.
+    // dir = -1 is the physical default: current out of + into -, which by the
+    // right-hand rule for this winding puts the N pole at the TOP end of the
+    // bore (field exits the top). dir = +1 reverses both the flow and the field.
     return dir < 0
-      ? 'current + → − (N pole at bottom)'
-      : 'current − → + (N pole at top)';
+      ? 'current + → − (N pole at top)'
+      : 'current − → + (N pole at bottom)';
   },
   params: SOLENOID_PARAMS,
   presets: SOLENOID_PRESETS,
