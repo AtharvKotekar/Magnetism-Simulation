@@ -1155,7 +1155,7 @@ export class Overlays {
     // interior portions are collected (boreLines) and drawn faintly on top
     // of the coil so the parallel bore field reads through the winding.
     const Lh = L / 2;
-    const na = 2.6 * boreR, al = 1.7, Sw = 0.92 * Lh, tm = 4.0;
+    const na = 3.4 * boreR, al = 1.6, Sw = 1.15 * Lh, tm = 2.6;
     const hFn = (n) => n * Math.exp(-Math.pow(n / na, al));
     const hpFn = (n) => Math.exp(-Math.pow(n / na, al)) * (1 - al * Math.pow(n / na, al));
     const wFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sw, tm));
@@ -1171,7 +1171,7 @@ export class Overlays {
     };
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const boreLines = [];
-    for (const seed of [0.16, 0.34, 0.52, 0.70, 0.88]) {
+    for (const seed of [0.18, 0.40, 0.62, 0.84]) {
       let n = seed * boreR, u = 0;
       const sN = n, sU = u;
       const gN = (nn, uu) => hpFn(nn) * wFn(uu);   // dpsi/dn
