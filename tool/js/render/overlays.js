@@ -1159,14 +1159,21 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Physics-correct solenoid field. EXTERIOR: nested SMOOTH loops (half-
-    // ellipse C-shapes) that leave the N end, bulge round each side, and
-    // enter the S end — the closed return field (drawn behind the coil,
-    // carries the comet flow). INTERIOR: evenly-spaced STRAIGHT lines
-    // parallel to the axis (the uniform bore field), collected as boreLines
-    // and drawn faintly ON TOP of the coil so the parallel field reads
-    // through the winding. No brackets, no stubs.
+    // Physics-correct solenoid field = STREAMLINES (level sets of the stream
+    // function psi(n,u) = h(n)*w(u)). Inside the bore w~1, so the level sets
+    // are n=const -> STRAIGHT PARALLEL lines; beyond the poles w falls and
+    // h(n) rises to hold psi, so each line curves out and loops back -> ONE
+    // continuous closed field line. Level sets never cross. The straight
+    // interior portions are collected (boreLines) and drawn faintly on top
+    // of the coil so the parallel bore field reads through the winding.
     const Lh = L / 2;
+    const na = 2.6 * boreR, al = 1.7, Sw = 0.92 * Lh, tm = 4.0;
+    const hFn = (n) => n * Math.exp(-Math.pow(n / na, al));
+    const hpFn = (n) => Math.exp(-Math.pow(n / na, al)) * (1 - al * Math.pow(n / na, al));
+    const wFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sw, tm));
+    const wpFn = (u) => (Math.abs(u) < 1e-12 ? 0
+      : -wFn(u) * (tm / Sw) * Math.pow(Math.abs(u) / Sw, tm - 1) * Math.sign(u));
+    const step = pxToM * 4;
     const clipRuns = (pts) => {
       const out = []; let run = [];
       const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
@@ -1174,38 +1181,38 @@ export class Overlays {
       flush();
       return out;
     };
-    const emit = (u, n, side) => ({ x: mx + ux * u + nx * side * n, y: my + uy * u + ny * side * n });
-    const NLOOP = Math.max(2, Math.round((opts.rings ?? 12) / 2));   // loops per side
-    for (let k = 0; k < NLOOP; k++) {
-      const f = NLOOP === 1 ? 0 : k / (NLOOP - 1);
-      const W = boreR * (1.25 + 1.85 * f);          // lateral bulge (nested out)
-      const H = Lh + Lh * (0.10 + 0.34 * f);        // vertical reach past poles
-      for (const side of [1, -1]) {
-        const pts = [];
-        const seg = 160;
-        for (let i = 0; i <= seg; i++) {
-          const a = -Math.PI / 2 + Math.PI * (i / seg);   // N -> bulge -> S
-          pts.push(emit(H * Math.sin(a), W * Math.cos(a), side));
-        }
-        addClipped(pts);
-      }
-    }
-    // interior parallel bore lines (straight, evenly spaced across the bore,
-    // gently tapering toward the axis at the ends to merge into the loops)
+    const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const boreLines = [];
-    const NIN = 9, ext = Lh * 0.10;
-    for (let i = 0; i < NIN; i++) {
-      const fx = (i - (NIN - 1) / 2) / ((NIN - 1) / 2);
-      const ni = fx * boreR * 0.9;
-      const line = [];
-      const seg = 80;
-      for (let j = 0; j <= seg; j++) {
-        const u = -(Lh + ext) + (2 * (Lh + ext)) * (j / seg);
-        const tt = u / (Lh + ext);
-        const conv = 1 - 0.4 * Math.max(0, Math.abs(tt) - 0.72) / 0.28;
-        line.push(emit(u, ni * conv, 1));
+    for (const seed of [0.16, 0.34, 0.52, 0.70, 0.88]) {
+      let n = seed * boreR, u = 0;
+      const sN = n, sU = u;
+      const gN = (nn, uu) => hpFn(nn) * wFn(uu);   // dpsi/dn
+      const gU = (nn, uu) => hFn(nn) * wpFn(uu);   // dpsi/du
+      let tN = -gU(n, u), tU = gN(n, u);           // rot90(grad)
+      if (tU > 0) { tN = -tN; tU = -tU; }          // start heading -u (toward N)
+      const pts = [{ n, u }];
+      for (let i = 0; i < 30000; i++) {
+        const dir = (nn, uu) => {
+          let dn = -gU(nn, uu), du = gN(nn, uu);
+          if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
+          const m = Math.max(1e-12, Math.hypot(dn, du));
+          return [dn / m, du / m];
+        };
+        const k1 = dir(n, u);
+        const k2 = dir(n + k1[0] * step / 2, u + k1[1] * step / 2);
+        const k3 = dir(n + k2[0] * step / 2, u + k2[1] * step / 2);
+        const k4 = dir(n + k3[0] * step, u + k3[1] * step);
+        const dn = step / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+        const du = step / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+        n += dn; u += du; tN = dn; tU = du;
+        pts.push({ n, u });
+        if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
       }
-      for (const r of clipRuns(line)) boreLines.push(r);
+      for (const side of [1, -1]) {
+        addClipped(pts.map((p) => emit(p.u, side * p.n)));
+        const inner = pts.filter((p) => p.n <= boreR).map((p) => emit(p.u, side * p.n));
+        for (const r of clipRuns(inner)) boreLines.push(r);
+      }
     }
     this._solenoidBoreLines = boreLines;
 
