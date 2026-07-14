@@ -1154,10 +1154,27 @@ export class Overlays {
     // bar magnet and never cross. Drawn ON TOP of the coil so the parallel
     // interior reads clearly.
     const Lh = L / 2;
-    // Field geometry is built PROCEDURALLY (below) rather than by tracing a
-    // stream function: the analytic streamlines developed necks/shoulders where
-    // the straight interior met the curved exterior. Straight bore lines +
-    // smooth superellipse lobes are wiggle-free by construction.
+    const na = 3.4 * boreR, al = 1.6, tm = 2.6;
+    const Sd = 0.55 * Lh;                 // flare decay length BEYOND the coil ends
+    const hFn = (n) => n * Math.exp(-Math.pow(Math.abs(n) / na, al));
+    const hpFn = (n) => (Math.abs(n) < 1e-9 ? 1
+      : Math.exp(-Math.pow(Math.abs(n) / na, al)) * (1 - al * Math.pow(Math.abs(n) / na, al)));
+    // Flat-top axial window: w = 1 for |u| <= Lh, so inside the coil the stream
+    // function is psi = h(n) and its level sets are EXACTLY straight, parallel
+    // lines (n = const) over the whole coil length. Streamlines only start to
+    // flare past the ends (|u| > Lh) — so every field line enters/exits at the
+    // pole faces and none crosses the coil's side wall.
+    const wFn = (u) => {
+      const a = Math.abs(u);
+      return a <= Lh ? 1 : Math.exp(-Math.pow((a - Lh) / Sd, tm));
+    };
+    const wpFn = (u) => {
+      const a = Math.abs(u);
+      if (a <= Lh) return 0;
+      const w = Math.exp(-Math.pow((a - Lh) / Sd, tm));
+      return -w * (tm / Sd) * Math.pow((a - Lh) / Sd, tm - 1) * Math.sign(u);
+    };
+    const step = pxToM * 4;
     const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
     const clipRuns = (pp) => {
       const out = []; let run = [];
@@ -1166,37 +1183,51 @@ export class Overlays {
       flush();
       return out;
     };
-    // Inside the coil the field is uniform -> straight, parallel bore lines.
-    // Outside, each line returns to the other pole as a smooth SUPERELLIPSE
-    // lobe: n(u) = n_i + b*(1 - |u/Lh|^p)^(1/p). It meets the straight interior
-    // EXACTLY at the pole (u = ±Lh, n = n_i) so the two stay connected, and it
-    // has no neck/shoulder/wiggle. nMax grows with n_i so the lobes nest
-    // without crossing. The rounded pole cap tucks behind the coil occluder.
-    const NL = Math.max(3, Math.min(9, Math.round(opts.rings ?? 6)));
-    const pEll = 2.4;                                     // superellipse roundness
-    const outerMax = Math.max(2.4 * boreR, rMax * 0.6);   // outermost lobe reach
-    const boreLines = [];
-    for (let i = 0; i < NL; i++) {
-      const f = NL === 1 ? 0 : i / (NL - 1);
-      const n_i = boreR * (0.14 + 0.74 * f);              // near axis -> bore wall
-      const nMax = boreR * 1.6 + (outerMax - boreR * 1.6) * (f * f);
-      const b = nMax - n_i;
+    const boreLines = [];   // interior (bore) portions -> revealed on top
+    for (const seed of [0.14, 0.30, 0.46, 0.62, 0.78]) {
+      let n = seed * boreR, u = 0;
+      const sN = n, sU = u;
+      let tN = -hFn(n) * wpFn(u), tU = hpFn(n) * wFn(u);
+      if (tU > 0) { tN = -tN; tU = -tU; }
+      const pts = [{ n, u }];
+      for (let i = 0; i < 40000; i++) {
+        const dir = (nn, uu) => {
+          let dn = -hFn(nn) * wpFn(uu), du = hpFn(nn) * wFn(uu);
+          if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
+          const m = Math.max(1e-12, Math.hypot(dn, du));
+          return [dn / m, du / m];
+        };
+        const k1 = dir(n, u);
+        const k2 = dir(n + k1[0] * step / 2, u + k1[1] * step / 2);
+        const k3 = dir(n + k2[0] * step / 2, u + k2[1] * step / 2);
+        const k4 = dir(n + k3[0] * step, u + k3[1] * step);
+        const dn = step / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+        const du = step / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+        n += dn; u += du; tN = dn; tU = du;
+        pts.push({ n, u });
+        if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
+      }
+      // Split each CONTINUOUS streamline at the bore wall (n = boreR): the
+      // INTERIOR part (straight/parallel inside the coil) goes to the bore
+      // layer, the EXTERIOR part (the loops) stays behind the coil. The
+      // boundary point is shared by both, so the interior lines stay
+      // CONNECTED to the curved exterior loops.
       for (const side of [1, -1]) {
-        // interior straight bore line — wound top -> bottom so its flow runs
-        // toward the N end (dir handles the sign); revealed on top.
-        const bore = [];
-        for (let k = 0; k <= 40; k++) bore.push(emit(-Lh + 2 * Lh * (k / 40), side * n_i));
-        for (const r of clipRuns(bore)) boreLines.push(r);
-        // exterior superellipse lobe, wound bottom -> top (up the outside) so
-        // its flow continues the interior's into one closed loop — bulge out.
-        const seg = 160, lobe = [];
-        for (let k = 0; k <= seg; k++) {
-          const u = Lh - 2 * Lh * (k / seg);
-          const base = Math.max(0, 1 - Math.pow(Math.abs(u / Lh), pEll));
-          const n = n_i + b * Math.pow(base, 1 / pEll);
-          lobe.push(emit(u, side * n));
+        const em = pts.map((p) => ({ ...emit(p.u, side * p.n), interior: p.n <= boreR && Math.abs(p.u) <= Lh }));
+        let run = [em[0]];
+        const flushRun = (isInterior) => {
+          if (run.length < 2) return;
+          if (isInterior) { for (const r of clipRuns(run)) boreLines.push(r); }
+          else addClipped(run);
+        };
+        for (let i = 1; i < em.length; i++) {
+          run.push(em[i]);
+          if (em[i].interior !== em[i - 1].interior) {
+            flushRun(em[i - 1].interior);
+            run = [em[i]];                 // new run starts at the shared boundary
+          }
         }
-        addClipped(lobe);
+        flushRun(em[em.length - 1].interior);
       }
     }
     this._solenoidBoreLines = boreLines;
