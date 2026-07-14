@@ -1147,61 +1147,49 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Physics-correct solenoid field = STREAMLINES (level sets of the stream
-    // function psi(n,u) = h(n)*w(u)). Inside the bore w~1, so the level sets
-    // are n=const -> STRAIGHT PARALLEL lines; beyond the poles w falls and
-    // h(n) rises to hold psi, so each line curves out and loops back -> ONE
-    // continuous closed field line. Level sets never cross. The straight
-    // interior portions are collected (boreLines) and drawn faintly on top
-    // of the coil so the parallel bore field reads through the winding.
+    // Solenoid field, demonstration style. INTERIOR: straight PARALLEL lines
+    // through the bore. OPEN ENDS: each line flares out of the poles
+    // (diverging above N, converging below S) and ends in open space -- the
+    // classic textbook "field escaping the ends". Plus big return loops on
+    // each side for the external field.
     const Lh = L / 2;
-    const na = 3.4 * boreR, al = 1.6, Sw = 1.15 * Lh, tm = 2.6;
-    const hFn = (n) => n * Math.exp(-Math.pow(n / na, al));
-    const hpFn = (n) => Math.exp(-Math.pow(n / na, al)) * (1 - al * Math.pow(n / na, al));
-    const wFn = (u) => Math.exp(-Math.pow(Math.abs(u) / Sw, tm));
-    const wpFn = (u) => (Math.abs(u) < 1e-12 ? 0
-      : -wFn(u) * (tm / Sw) * Math.pow(Math.abs(u) / Sw, tm - 1) * Math.sign(u));
-    const step = pxToM * 4;
-    const clipRuns = (pts) => {
-      const out = []; let run = [];
-      const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
-      for (const p of pts) { if (inside(p.x, p.y)) run.push(p); else flush(); }
-      flush();
+    const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
+    const qbez = (p0, p1, p2, seg) => {
+      const out = [];
+      for (let i = 0; i <= seg; i++) {
+        const t = i / seg, mt = 1 - t;
+        out.push({ u: mt * mt * p0.u + 2 * mt * t * p1.u + t * t * p2.u,
+                   n: mt * mt * p0.n + 2 * mt * t * p1.n + t * t * p2.n });
+      }
       return out;
     };
-    const emit = (u, n) => ({ x: mx + ux * u + nx * n, y: my + uy * u + ny * n });
-    const boreLines = [];
-    for (const seed of [0.18, 0.40, 0.62, 0.84]) {
-      let n = seed * boreR, u = 0;
-      const sN = n, sU = u;
-      const gN = (nn, uu) => hpFn(nn) * wFn(uu);   // dpsi/dn
-      const gU = (nn, uu) => hFn(nn) * wpFn(uu);   // dpsi/du
-      let tN = -gU(n, u), tU = gN(n, u);           // rot90(grad)
-      if (tU > 0) { tN = -tN; tU = -tU; }          // start heading -u (toward N)
-      const pts = [{ n, u }];
-      for (let i = 0; i < 30000; i++) {
-        const dir = (nn, uu) => {
-          let dn = -gU(nn, uu), du = gN(nn, uu);
-          if (dn * tN + du * tU < 0) { dn = -dn; du = -du; }
-          const m = Math.max(1e-12, Math.hypot(dn, du));
-          return [dn / m, du / m];
-        };
-        const k1 = dir(n, u);
-        const k2 = dir(n + k1[0] * step / 2, u + k1[1] * step / 2);
-        const k3 = dir(n + k2[0] * step / 2, u + k2[1] * step / 2);
-        const k4 = dir(n + k3[0] * step, u + k3[1] * step);
-        const dn = step / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
-        const du = step / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
-        n += dn; u += du; tN = dn; tU = du;
-        pts.push({ n, u });
-        if (i > 20 && Math.hypot(n - sN, u - sU) < step * 1.4) { pts.push({ n: sN, u: sU }); break; }
-      }
+    const M = Math.max(3, Math.round(opts.rings ?? 7));   // parallel bore lines
+    const reach = Lh * 0.9, K = 2.4;
+    for (let i = 0; i < M; i++) {
+      const fx = M === 1 ? 0 : (i - (M - 1) / 2) / ((M - 1) / 2);
+      const xi = fx * boreR * 0.82, xo = xi * K;
+      const seq = [];
+      // bottom open end (below S) curving up into the bore
+      for (const p of qbez({ u: Lh + reach, n: xo }, { u: Lh + reach * 0.55, n: xi }, { u: Lh, n: xi }, 22)) seq.push(p);
+      // straight parallel interior (bottom -> top)
+      seq.push({ u: -Lh, n: xi });
+      // top open end (above N), flaring out
+      for (const p of qbez({ u: -Lh, n: xi }, { u: -Lh - reach * 0.55, n: xi }, { u: -Lh - reach, n: xo }, 22)) seq.push(p);
+      addClipped(seq.map((p) => emit(p.u, p.n)));
+    }
+    // big external return loops (half-ellipse C-shapes on each side)
+    for (let k = 0; k < 2; k++) {
+      const W = boreR * (2.4 + 1.6 * k), H = Lh + Lh * (0.5 + 0.35 * k);
       for (const side of [1, -1]) {
-        addClipped(pts.map((p) => emit(p.u, side * p.n)));
-        const inner = pts.filter((p) => p.n <= boreR).map((p) => emit(p.u, side * p.n));
-        for (const r of clipRuns(inner)) boreLines.push(r);
+        const pts = [];
+        for (let j = 0; j <= 120; j++) {
+          const a = -Math.PI / 2 + Math.PI * (j / 120);
+          pts.push(emit(H * Math.sin(a), side * W * Math.cos(a)));
+        }
+        addClipped(pts);
       }
     }
+    const boreLines = [];
     this._solenoidBoreLines = boreLines;
 
     for (const line of lines) {
