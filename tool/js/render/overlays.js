@@ -1159,13 +1159,13 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Reference solenoid family (matches the physics textbook diagram):
-    // nested CLOSED loops. Each loop = a straight INTERIOR line parallel to
-    // the axis through the bore + a smooth exterior return half-oval that
-    // sprays out of one pole, bulges around the side, and enters the other.
-    // The interior segments are also collected into `boreLines` and drawn
-    // faintly ON TOP of the coil (drawFieldBore) so the parallel bore field
-    // reads through the winding — the 3D "lower layer" look.
+    // Physics-correct solenoid field. EXTERIOR: nested SMOOTH loops (half-
+    // ellipse C-shapes) that leave the N end, bulge round each side, and
+    // enter the S end — the closed return field (drawn behind the coil,
+    // carries the comet flow). INTERIOR: evenly-spaced STRAIGHT lines
+    // parallel to the axis (the uniform bore field), collected as boreLines
+    // and drawn faintly ON TOP of the coil so the parallel field reads
+    // through the winding. No brackets, no stubs.
     const Lh = L / 2;
     const clipRuns = (pts) => {
       const out = []; let run = [];
@@ -1175,33 +1175,38 @@ export class Overlays {
       return out;
     };
     const emit = (u, n, side) => ({ x: mx + ux * u + nx * side * n, y: my + uy * u + ny * side * n });
-    const boreLines = [];
-    const N = Math.max(2, Math.round((opts.rings ?? 12) / 2));   // loops per side
-    const iSeg = 44, rSeg = 130;
-    const interiorRun = (xi, side) => {
-      const b = [];
-      for (let i = 0; i <= iSeg; i++) b.push(emit(Lh - (2 * Lh) * (i / iSeg), xi, side));
-      return b;
-    };
-    for (let k = 0; k < N; k++) {
-      const f = N === 1 ? 0 : k / (N - 1);
-      const xi = boreR * (0.14 + 0.82 * f);          // interior / pole-exit offset
-      const R = boreR * (3.75 - 2.7 * f);            // far bulge: wide -> just outside
-      const capH = Lh * (0.27 - 0.17 * f);           // overshoot past the poles (fan)
+    const NLOOP = Math.max(2, Math.round((opts.rings ?? 12) / 2));   // loops per side
+    for (let k = 0; k < NLOOP; k++) {
+      const f = NLOOP === 1 ? 0 : k / (NLOOP - 1);
+      const W = boreR * (1.25 + 1.85 * f);          // lateral bulge (nested out)
+      const H = Lh + Lh * (0.10 + 0.34 * f);        // vertical reach past poles
       for (const side of [1, -1]) {
-        const pts = interiorRun(xi, side).slice();   // interior B -> A (wound for dir=+1)
-        for (let i = 1; i <= rSeg; i++) {            // exterior return A -> B, round the side
-          const a = Math.PI * (i / rSeg);
-          const lat = xi + (R - xi) * Math.sin(a);
-          const u = -(Lh + capH) * Math.cos(a);
-          pts.push(emit(u, lat, side));
+        const pts = [];
+        const seg = 160;
+        for (let i = 0; i <= seg; i++) {
+          const a = -Math.PI / 2 + Math.PI * (i / seg);   // N -> bulge -> S
+          pts.push(emit(H * Math.sin(a), W * Math.cos(a), side));
         }
-        pts.push({ ...pts[0] });
         addClipped(pts);
-        for (const r of clipRuns(interiorRun(xi, side))) boreLines.push(r);
       }
     }
-    for (const r of clipRuns(interiorRun(0, 1))) boreLines.push(r);   // central axis line
+    // interior parallel bore lines (straight, evenly spaced across the bore,
+    // gently tapering toward the axis at the ends to merge into the loops)
+    const boreLines = [];
+    const NIN = 9, ext = Lh * 0.10;
+    for (let i = 0; i < NIN; i++) {
+      const fx = (i - (NIN - 1) / 2) / ((NIN - 1) / 2);
+      const ni = fx * boreR * 0.9;
+      const line = [];
+      const seg = 80;
+      for (let j = 0; j <= seg; j++) {
+        const u = -(Lh + ext) + (2 * (Lh + ext)) * (j / seg);
+        const tt = u / (Lh + ext);
+        const conv = 1 - 0.4 * Math.max(0, Math.abs(tt) - 0.72) / 0.28;
+        line.push(emit(u, ni * conv, 1));
+      }
+      for (const r of clipRuns(line)) boreLines.push(r);
+    }
     this._solenoidBoreLines = boreLines;
 
     for (const line of lines) {
