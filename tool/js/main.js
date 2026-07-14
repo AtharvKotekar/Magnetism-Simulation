@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v58';
-import { SceneLayers } from './render/scene.js?v=coil-v58';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v58';
-import { Overlays } from './render/overlays.js?v=coil-v58';
+import { createGL } from './render/gl.js?v=coil-v59';
+import { SceneLayers } from './render/scene.js?v=coil-v59';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v59';
+import { Overlays } from './render/overlays.js?v=coil-v59';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v58';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v58';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v59';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v59';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v58';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v58';
+import { PRESETS } from './ui/presets.js?v=coil-v59';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v59';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v58';
-import { CompassOverlay } from './render/compass.js?v=coil-v58';
+import { buildVariantConfig } from './variant.js?v=coil-v59';
+import { CompassOverlay } from './render/compass.js?v=coil-v59';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v58', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v59', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -505,6 +505,20 @@ function drawFrame(m, {
   app.scene.setJitter([0, 0]);
   app.scene.drawOccluder(app.ui.coilTurns ?? 1);
   drawOnMagnet();
+
+  // Solenoid: the parallel bore field, drawn faintly ON TOP of the coil so
+  // students see the field threading the winding (the 3D "lower layer").
+  if (app.variant.fieldOverlay === 'solenoid' && app.ui.showFieldLines &&
+      (app.ui.currentOn || currentAbs > 0.5)) {
+    app.overlays.drawFieldBore({
+      H: o.H,
+      res: o.res,
+      jitterPx: [0, 0],
+      color: hexToRgb(app.ui.fieldLineColor),
+      opacity: app.ui.fieldBoreOpacity ?? 0.18,
+      intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
+    });
+  }
 
   const showInd = indicator !== null ? indicator : app.ui.showIndicator;
   if (showInd) {

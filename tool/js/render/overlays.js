@@ -1057,6 +1057,18 @@ export class Overlays {
       }
     }
 
+    const boreVerts = [];
+    for (const bl of (this._solenoidBoreLines || [])) pushThickPlaneLine(bl, bandHalfWidth * 0.8, boreVerts, []);
+    this.fieldBoreCount = boreVerts.length / 2;
+    if (!this.fieldBoreVAO) this.fieldBoreVAO = gl.createVertexArray();
+    gl.bindVertexArray(this.fieldBoreVAO);
+    if (!this.fieldBoreBuf) this.fieldBoreBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fieldBoreBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boreVerts), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this._solenoidBoreLines = null;
     this.fieldVectorLines = lines;
     this.uploadFieldGeometry(verts, dashVerts, arrowVerts);
   }
@@ -1147,87 +1159,51 @@ export class Overlays {
       [-arrowLen * 0.55, arrowWid],
     ];
 
-    // Textbook solenoid family: closed return loops through the bore plus
-    // open lines fanning out of the mouths. Every curve is C-infinity by
-    // construction — the loops are superellipses in the axis frame (one
-    // smooth closed equation, no straight-segment + ellipse-cap joints,
-    // which is what made the old family read as a wobbly rounded box), and
-    // the fans flare with a cubic ramp instead of kinking into a straight
-    // ray at the mouth.
+    // Reference solenoid family (matches the physics textbook diagram):
+    // nested CLOSED loops. Each loop = a straight INTERIOR line parallel to
+    // the axis through the bore + a smooth exterior return half-oval that
+    // sprays out of one pole, bulges around the side, and enters the other.
+    // The interior segments are also collected into `boreLines` and drawn
+    // faintly ON TOP of the coil (drawFieldBore) so the parallel bore field
+    // reads through the winding — the 3D "lower layer" look.
     const Lh = L / 2;
-    // The closed return loops are LEVEL SETS of one smooth stream function
-    //   psi(U, n) = h(n) * w(U),   h = n*exp(-(n/na)^al)  (peak at the
-    //   winding column),           w = exp(-(|U|/S)^tm)   (axial window)
-    // traced with unit-speed RK4 along rot90(grad psi). Level sets of one
-    // C-infinity function cannot cross and nest around the winding, so the
-    // family is smooth and collision-free BY CONSTRUCTION. The na/al/S/tm
-    // values are fitted so the bore offsets, return distances and cap reach
-    // match the approved composition (bores 0.30/0.58 boreR, returns
-    // ~2.5/3.9 boreR, tips ~0.9/1.6 boreR past the poles). Hand-stitched
-    // parametric loops (straight run + ellipse caps, or offset curves)
-    // either read boxy or graze each other at the mouths — don't go back.
-    const na = 0.61 * boreR, al = 0.63;
-    const Sw = 5.491 * boreR, tm = 7.51;
-    const hFn = (n) => n * Math.exp(-Math.pow(n / na, al));
-    const hpFn = (n) => Math.exp(-Math.pow(n / na, al)) * (1 - al * Math.pow(n / na, al));
-    const wFn = (U) => Math.exp(-Math.pow(Math.abs(U) / Sw, tm));
-    const wpFn = (U) => (U === 0 ? 0
-      : -wFn(U) * (tm / Sw) * Math.pow(Math.abs(U) / Sw, tm - 1) * Math.sign(U));
-    const step = pxToM * 4;
-    for (const bore of [0.30, 0.58]) {
+    const clipRuns = (pts) => {
+      const out = []; let run = [];
+      const flush = () => { if (run.length > 2) out.push(arcLengthPlane(run, pxToM)); run = []; };
+      for (const p of pts) { if (inside(p.x, p.y)) run.push(p); else flush(); }
+      flush();
+      return out;
+    };
+    const emit = (u, n, side) => ({ x: mx + ux * u + nx * side * n, y: my + uy * u + ny * side * n });
+    const boreLines = [];
+    const N = Math.max(2, Math.round((opts.rings ?? 12) / 2));   // loops per side
+    const iSeg = 44, rSeg = 130;
+    const interiorRun = (xi, side) => {
+      const b = [];
+      for (let i = 0; i <= iSeg; i++) b.push(emit(Lh - (2 * Lh) * (i / iSeg), xi, side));
+      return b;
+    };
+    for (let k = 0; k < N; k++) {
+      const f = N === 1 ? 0 : k / (N - 1);
+      const xi = boreR * (0.14 + 0.82 * f);          // interior / pole-exit offset
+      const R = boreR * (3.75 - 2.7 * f);            // far bulge: wide -> just outside
+      const capH = Lh * (0.27 - 0.17 * f);           // overshoot past the poles (fan)
       for (const side of [1, -1]) {
-        // trace in the local (U, n>0) frame, mirror by `side` on emit
-        let U = 0, n = bore * boreR;
-        const seedU = U, seedN = n;
-        // tangent = rot90(grad psi); start with dU > 0 so the bore branch
-        // is wound A -> B — the dash shader then flows B -> A for dir=+1,
-        // the approved direction (matches the open fan lines below).
-        let tU = -hpFn(n) * wFn(U), tN = hFn(n) * wpFn(U);
-        if (tU < 0) { tU = -tU; tN = -tN; }
-        const pts = [{ u: U, n }];
-        for (let i = 0; i < 9000; i++) {
-          const dirAt = (u_, n_) => {
-            let du = -hpFn(n_) * wFn(u_), dn = hFn(n_) * wpFn(u_);
-            if (du * tU + dn * tN < 0) { du = -du; dn = -dn; }
-            const m = Math.max(1e-15, Math.hypot(du, dn));
-            return [du / m, dn / m];
-          };
-          const k1 = dirAt(U, n);
-          const k2 = dirAt(U + (k1[0] * step) / 2, n + (k1[1] * step) / 2);
-          const k3 = dirAt(U + (k2[0] * step) / 2, n + (k2[1] * step) / 2);
-          const k4 = dirAt(U + k3[0] * step, n + k3[1] * step);
-          const dU = (step / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
-          const dN = (step / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
-          U += dU; n += dN; tU = dU; tN = dN;
-          pts.push({ u: U, n });
-          if (i > 24 && Math.hypot(U - seedU, n - seedN) < step * 1.4) {
-            pts.push({ u: seedU, n: seedN });   // clean closure
-            break;
-          }
+        const pts = interiorRun(xi, side).slice();   // interior B -> A (wound for dir=+1)
+        for (let i = 1; i <= rSeg; i++) {            // exterior return A -> B, round the side
+          const a = Math.PI * (i / rSeg);
+          const lat = xi + (R - xi) * Math.sin(a);
+          const u = -(Lh + capH) * Math.cos(a);
+          pts.push(emit(u, lat, side));
         }
-        addClipped(pts.map((p) => ({
-          x: mx + ux * p.u + nx * side * p.n,
-          y: my + uy * p.u + ny * side * p.n,
-        })));
+        pts.push({ ...pts[0] });
+        addClipped(pts);
+        for (const r of clipRuns(interiorRun(xi, side))) boreLines.push(r);
       }
     }
-    // open lines near the axis: straight through the bore, then flaring out
-    // of the mouths with a C2 cubic ramp (no angle break at the pole plane)
-    const reach = Math.hypot(sheetW === Infinity ? rMax : sheetW, sheetH === Infinity ? rMax : sheetH);
-    const flareAmp = boreR * 0.66;        // lateral drift after one flareRef
-    const flareRef = boreR * 3.9;         // axial distance scale of the flare
-    const fanStep = pxToM * 4;
-    for (const off of [0, boreR * 0.14, -boreR * 0.14]) {
-      const pts = [];
-      const nFan = Math.ceil((2 * (Lh + reach)) / fanStep);
-      for (let i = 0; i <= nFan; i++) {
-        const t = -Lh - reach + (2 * (Lh + reach)) * (i / nFan);   // A -> B
-        const over = Math.max(0, Math.abs(t) - Lh) / flareRef;
-        const n = off + Math.sign(off) * flareAmp * over * over * over;
-        pts.push({ x: mx + ux * t + nx * n, y: my + uy * t + ny * n });
-      }
-      addClipped(pts);
-    }
+    for (const r of clipRuns(interiorRun(0, 1))) boreLines.push(r);   // central axis line
+    this._solenoidBoreLines = boreLines;
+
     for (const line of lines) {
       pushThickPlaneLine(line, bandHalfWidth, verts, dashVerts);
       if (arrowDensity > 0 && line.length > 1) {
@@ -1298,6 +1274,25 @@ export class Overlays {
       gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], alpha * (this.fieldFadeFactor ?? 1));
       gl.drawArrays(gl.TRIANGLES, 0, this.fieldFadeCount);
     }
+    gl.bindVertexArray(null);
+  }
+
+  // Faint straight interior bore lines, drawn ON TOP of the coil occluder
+  // so students see the parallel field threading the solenoid (3D underlay).
+  drawFieldBore(o) {
+    if (!this.fieldBoreCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.linesProg);
+    gl.bindVertexArray(this.fieldBoreVAO);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix3fv(this.lu.uH, false, o.H);
+    gl.uniform2f(this.lu.uRes, o.res[0], o.res[1]);
+    gl.uniform2f(this.lu.uJitterPx, o.jitterPx?.[0] ?? 0, o.jitterPx?.[1] ?? 0);
+    const c = o.color || [0.55, 0.85, 1.0];
+    const a = Math.min(0.7, Math.max(0, o.opacity ?? 0.18) * Math.max(0, Math.min(1, o.intensity ?? 1)));
+    gl.uniform4f(this.lu.uColor, c[0], c[1], c[2], a);
+    gl.drawArrays(gl.TRIANGLES, 0, this.fieldBoreCount);
     gl.bindVertexArray(null);
   }
 
