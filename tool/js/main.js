@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=coil-v55';
-import { SceneLayers } from './render/scene.js?v=coil-v55';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v55';
-import { Overlays } from './render/overlays.js?v=coil-v55';
+import { createGL } from './render/gl.js?v=coil-v56';
+import { SceneLayers } from './render/scene.js?v=coil-v56';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=coil-v56';
+import { Overlays } from './render/overlays.js?v=coil-v56';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=coil-v55';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v55';
+import { CalibrationUI } from './ui/calibration.js?v=coil-v56';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=coil-v56';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=coil-v55';
-import { DEFAULT_UI } from './ui/defaults.js?v=coil-v55';
+import { PRESETS } from './ui/presets.js?v=coil-v56';
+import { DEFAULT_UI } from './ui/defaults.js?v=coil-v56';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=coil-v55';
-import { CompassOverlay } from './render/compass.js?v=coil-v55';
+import { buildVariantConfig } from './variant.js?v=coil-v56';
+import { CompassOverlay } from './render/compass.js?v=coil-v56';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v55', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=coil-v56', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -991,7 +991,9 @@ function turnsFollow(m) {
   if (ta.t0 == null || m.time < ta.t0) ta.t0 = m.time;
   const p = Math.min(1, (m.time - ta.t0) / ta.dur);
   const e = p * p * (3 - 2 * p);          // smoothstep ease in/out
-  app.ui.fieldLineCount = Math.round(ta.from + (ta.to - ta.from) * e);
+  // FRACTIONAL count so the coil builder fades each new ring in by the
+  // fractional part instead of popping it on; lands on the integer target.
+  app.ui.fieldLineCount = ta.from + (ta.to - ta.from) * e;
   rebuildFieldOverlay();
   const now = performance.now();
   if (p >= 1 || now - ta.lastPanel > 150) {

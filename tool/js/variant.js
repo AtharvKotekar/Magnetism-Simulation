@@ -259,12 +259,14 @@ export const COIL_PRESETS = [
     // 9 → 22; press again for 3 coils and 22 → 36. More turns = stronger
     // field, told purely with the overlay.
     name: 'Coil turns stage 1→3 coils',
-    hint: 'Clear board, 80 A. Press ➕ Add coil to step 1→2→3 turns — rings bloom 9→22→36, no sprinkle, no tap.',
+    hint: 'Clear board, 80 A. Press ➕ Add coil to step 1→2→3 turns — rings bloom 10→22→36 (fading in smoothly), no sprinkle, no tap.',
     duration: 20,
     ui: {
       ...COIL_UI,
       currentOn: true,
-      fieldLineCount: 9,
+      // 10 = 5 whole ring pairs (identical render to the old 9, which
+      // rounded to 5 pairs); even counts keep the fade artefact-free
+      fieldLineCount: 10,
       fieldRadiusMultiplier: 1.08,
       fieldFirstRadiusPx: 64,
       fieldMaxRadiusPx: 1520,
@@ -641,7 +643,10 @@ const COIL_VARIANT = {
   // more turns, stronger field. Board stays clear, no tap, 80 A held.
   turnsStage: {
     dur: 2.2,
-    linesByTurns: { 1: 9, 2: 22, 3: 36 },
+    // EVEN counts (whole ring pairs) at each rest so the fractional-ring
+    // fade never leaves an outermost ring sitting half-dim; the coil always
+    // drew rings in pairs, so 10/22/36 render exactly as the old 9/22/36.
+    linesByTurns: { 1: 10, 2: 22, 3: 36 },
   },
   // Coil surge (panel ⚡ button + 'Coil surge stage' preset): stronger
   // current reads as MORE rings spaced WIDER. The ring count glides
@@ -650,11 +655,13 @@ const COIL_VARIANT = {
   // from nowhere.
   surge: {
     label: '⚡ Surge to 100 A',
-    title: 'Continuous-shot move: ramp amplitude to 100 A in ~1.3 s — rings bloom 10 → 13 (fading in smoothly) spaced wider (1.08 → 1.28), pulses to 2.35×, field motion to 1.7×, ONE tap, no re-sprinkle',
+    title: 'Continuous-shot move: ramp amplitude to 100 A in ~1.3 s — rings bloom 10 → 14 (fading in smoothly) spaced wider (1.08 → 1.28), pulses to 2.35×, field motion to 1.7×, ONE tap, no re-sprinkle',
     targetA: 100,
     dur: 1.3,   // snappy: the whole field change lands within ~1.2 s
     ui: {
-      fieldLineCount: 13,
+      // 14 = 7 whole ring pairs (identical render to the old 13, which
+      // rounded to 7 pairs) so the settled field has no half-dim ring
+      fieldLineCount: 14,
       fieldRadiusMultiplier: 1.28,
       currentPulseSpeed: 2.35,
       fieldMotionSpeed: 1.70,
