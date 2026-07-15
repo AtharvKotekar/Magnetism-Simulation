@@ -602,6 +602,9 @@ const SOLENOID_VARIANT = {
   fieldOverlay: 'solenoid',
   boreRadiusPx: 85,
   currentOverlay: { path: SOLENOID_PATH },
+  // Draggable compass prop (same sprites as the straight-wire tool). Its needle
+  // reads the solenoid's field — see solenoidNeedleAngle in main.js.
+  compass: { assetsBase: '../tool/assets/' },
   currentDirectionText(dir) {
     // dir = -1 is the physical default: current out of + into -, which by the
     // right-hand rule for this winding puts the N pole at the TOP end of the

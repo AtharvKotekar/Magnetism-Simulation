@@ -370,29 +370,35 @@ export function buildPanel(root, app) {
     slider(b, 'Needle sensitivity', 0.2, 8, 0.1, app.ui.compassSensitivity, '×', (v) => {
       app.ui.compassSensitivity = v;
     });
-    slider(b, 'Orbit radius', 0.03, 0.17, 0.001,
-      app.compassPolar ? app.compassPolar().R : 0.09, ' m', (v) => {
-        app.setCompassOrbitRadius(v);
+    // Orbit / ring-trace are wire-specific (they revolve around the conductor
+    // hole); the solenoid compass is just a draggable field probe.
+    if (app.variant.fieldOverlay !== 'solenoid') {
+      slider(b, 'Orbit radius', 0.03, 0.17, 0.001,
+        app.compassPolar ? app.compassPolar().R : 0.09, ' m', (v) => {
+          app.setCompassOrbitRadius(v);
+        });
+      slider(b, 'Orbit time', 2, 24, 0.5, app.ui.compassOrbitDur, ' s', (v) => {
+        app.ui.compassOrbitDur = v;
       });
-    slider(b, 'Orbit time', 2, 24, 0.5, app.ui.compassOrbitDur, ' s', (v) => {
-      app.ui.compassOrbitDur = v;
-    });
-    const orbitBtn = document.createElement('button');
-    orbitBtn.textContent = '⟳ Orbit once around the wire';
-    orbitBtn.title = 'One smooth full revolution on the invisible circular track — the needle rides the field the whole way.';
-    orbitBtn.onclick = () => app.liveCompassOrbit(app.ui.compassOrbitDur);
-    b.appendChild(orbitBtn);
-    const traceBtn = document.createElement('button');
-    traceBtn.textContent = '☉ Trace rings one by one';
-    traceBtn.title = 'Continuous-shot move: only ring 1 visible, the compass rides it for a full revolution, then ring 2 appears and the compass glides out and traces it too.';
-    traceBtn.onclick = () => app.liveCompassTrace();
-    b.appendChild(traceBtn);
-    check(b, 'Flow revealed by compass', app.ui.fieldRevealMode, (v) => {
-      app.ui.fieldRevealMode = v;
-    });
+      const orbitBtn = document.createElement('button');
+      orbitBtn.textContent = '⟳ Orbit once around the wire';
+      orbitBtn.title = 'One smooth full revolution on the invisible circular track — the needle rides the field the whole way.';
+      orbitBtn.onclick = () => app.liveCompassOrbit(app.ui.compassOrbitDur);
+      b.appendChild(orbitBtn);
+      const traceBtn = document.createElement('button');
+      traceBtn.textContent = '☉ Trace rings one by one';
+      traceBtn.title = 'Continuous-shot move: only ring 1 visible, the compass rides it for a full revolution, then ring 2 appears and the compass glides out and traces it too.';
+      traceBtn.onclick = () => app.liveCompassTrace();
+      b.appendChild(traceBtn);
+      check(b, 'Flow revealed by compass', app.ui.fieldRevealMode, (v) => {
+        app.ui.fieldRevealMode = v;
+      });
+    }
     const hint = document.createElement('div');
     hint.className = 'hint';
-    hint.textContent = 'Drag the compass anywhere — dragging also sets the orbit circle. Orbit radius moves it closer to or farther from the conductor.';
+    hint.textContent = app.variant.fieldOverlay === 'solenoid'
+      ? 'Drag the compass anywhere around the coil — the needle points along the solenoid’s field there.'
+      : 'Drag the compass anywhere — dragging also sets the orbit circle. Orbit radius moves it closer to or farther from the conductor.';
     b.appendChild(hint);
     const reset = document.createElement('button');
     reset.textContent = '⌖ Reset position';

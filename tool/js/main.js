@@ -767,6 +767,9 @@ function compassTraceFollow(m) {
 // of the paper, magnitude 1) plus the wire's tangent field, whose strength
 // is `compassSensitivity` Earth-fields at 5 cm and 30 A and falls off 1/r.
 function compassNeedleAngle(m) {
+  if (app.variant.fieldOverlay === 'solenoid' && app.coilLeftPlane && app.coilRightPlane) {
+    return solenoidNeedleAngle(m);
+  }
   const dx = app.ui.compassX - app.holePlane[0];
   const dy = app.ui.compassY - app.holePlane[1];
   const r = Math.max(0.012, Math.hypot(dx, dy));
@@ -776,6 +779,27 @@ function compassNeedleAngle(m) {
   // counterclockwise seen from above = tangent (dy, -dx) in y-down coords
   const bx = k * (dy / r);
   const by = k * (-dx / r) - 1;                // Earth north = -y (paper top)
+  return Math.atan2(bx, -by);                  // 0 = north, clockwise-positive
+}
+
+// Solenoid compass: the needle settles along the net in-plane field = Earth
+// (north = paper top, magnitude 1) + the solenoid's field, modelled as two
+// magnetic poles at the coil ends. N/S follow the current direction (dir < 0 =
+// the default + -> - current = N at the top). Outside the coil this two-pole
+// field matches the drawn stadium loops (out of N, curving into S), so the
+// needle stays tangent to the field lines wherever it is dragged. Pure function
+// of (position, signed current) — no history, so takes stay deterministic.
+function solenoidNeedleAngle(m) {
+  const dir = currentDirection(m);
+  const N = dir < 0 ? app.coilLeftPlane : app.coilRightPlane;   // dir<0 => N at top
+  const S = dir < 0 ? app.coilRightPlane : app.coilLeftPlane;
+  const px = app.ui.compassX, py = app.ui.compassY;
+  const dNx = px - N[0], dNy = py - N[1], rN = Math.max(0.008, Math.hypot(dNx, dNy));
+  const dSx = px - S[0], dSy = py - S[1], rS = Math.max(0.008, Math.hypot(dSx, dSy));
+  const I = m?.current ?? 0;
+  const k = (app.ui.compassSensitivity ?? 3) * (I / 30) * 0.15;  // field strength vs Earth
+  const bx = k * (dNx / (rN * rN) - dSx / (rS * rS));
+  const by = k * (dNy / (rN * rN) - dSy / (rS * rS)) - 1;        // Earth north = -y
   return Math.atan2(bx, -by);                  // 0 = north, clockwise-positive
 }
 
