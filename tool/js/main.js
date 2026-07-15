@@ -427,9 +427,10 @@ function drawFrame(m, {
   // lines — including the straight parallel bore field — read clearly ON TOP
   // of the winding, like the textbook diagram. Every other variant draws it
   // behind the occluder for depth.
+  const ff = !!app.ui.fieldForceVisible;   // show field with the current off
   const drawFieldOverlay = () => {
     if (!((app.ui.showFieldLines || showFieldMotion || app.ui.showFieldArrows) &&
-        (app.ui.currentOn || currentAbs > 0.5))) return;
+        (app.ui.currentOn || currentAbs > 0.5 || ff))) return;
     const fieldBase = {
       H: o.H,
       res: o.res,
@@ -444,7 +445,7 @@ function drawFrame(m, {
       app.overlays.drawFieldLines({
         ...fieldBase,
         color: hexToRgb(app.ui.fieldLineColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength, ff),
         opacity: app.ui.fieldLineOpacity,
       });
     }
@@ -453,7 +454,7 @@ function drawFrame(m, {
         ...fieldBase,
         mode: 'pulse',
         color: hexToRgb(app.ui.fieldMotionColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength, ff),
         speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         pulseWidth: app.ui.fieldPulseWidth,
@@ -466,7 +467,7 @@ function drawFrame(m, {
         ...fieldBase,
         mode: 'comet',
         color: hexToRgb(app.ui.fieldMotionColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength, ff),
         speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         pulseWidth: app.ui.fieldPulseWidth,
@@ -478,7 +479,7 @@ function drawFrame(m, {
       app.overlays.drawFieldCometHeads({
         ...fieldBase,
         color: hexToRgb(app.ui.fieldMotionColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength, ff),
         speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         cometHeadSize: app.ui.fieldCometHeadSize,
@@ -489,7 +490,7 @@ function drawFrame(m, {
         ...fieldBase,
         time: tArw,
         color: hexToRgb(app.ui.fieldArrowColor ?? app.ui.fieldLineColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldArrowStrength),
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldArrowStrength, ff),
         speed: app.ui.fieldArrowSpeed,
       });
     }
@@ -521,14 +522,14 @@ function drawFrame(m, {
   // its own adjustable opacity (fieldBoreOpacity) so the "inside" field can
   // be revealed gradually while the exterior loops stay behind for depth.
   if (app.variant.fieldOverlay === 'solenoid' && app.ui.showFieldLines &&
-      (app.ui.currentOn || currentAbs > 0.5)) {
+      (app.ui.currentOn || currentAbs > 0.5 || ff)) {
     app.overlays.drawFieldBore({
       H: o.H,
       res: o.res,
       jitterPx: [0, 0],
       color: hexToRgb(app.ui.fieldLineColor),
       opacity: app.ui.fieldBoreOpacity ?? 0.15,
-      intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength),
+      intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldLineStrength, ff),
     });
     // Direction on the interior field: comets + heads stream along the bore
     // lines the same way as the exterior loops. Faded in step with the reveal
@@ -542,7 +543,7 @@ function drawFrame(m, {
         dir: effectiveDir,
         time: tFld,
         color: hexToRgb(app.ui.fieldMotionColor),
-        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength) * boreReveal,
+        intensity: indicatorLevel(currentAbs, app.ui.currentOn, app.ui.fieldMotionStrength, ff) * boreReveal,
         speed: filmSafeFieldSpeed(),
         spacing: app.ui.fieldMotionSpacing,
         pulseWidth: app.ui.fieldPulseWidth,
@@ -879,7 +880,11 @@ function currentDirection(m) {
   return sign * (app.params.currentDir || 1);
 }
 
-function indicatorLevel(currentAbs, currentOn, strength = 1) {
+function indicatorLevel(currentAbs, currentOn, strength = 1, force = false) {
+  // force = show the field at full, CONSTANT strength while the current is
+  // switched off (the 'Inside the solenoid' diagram: field lines, no live
+  // current). Constant regardless of currentAbs so a ramp-down never flickers.
+  if (force && !currentOn) return Math.min(2, Math.max(0, strength));
   if (!currentOn && currentAbs <= 0.5) return 0;
   const base = Math.min(1, currentAbs / 20);
   return Math.min(2, Math.max(currentOn ? 0.3 : 0, base) * Math.max(0, strength));
@@ -1183,6 +1188,7 @@ function loadPreset(p) {
   const tKeys = p.uiTransition;
   const fromVals = tKeys?.length ? Object.fromEntries(tKeys.map((k) => [k, app.ui[k] ?? 0])) : null;
   app.ui.currentOn = p.ui?.currentOn ?? false;
+  app.ui.fieldForceVisible = p.ui?.fieldForceVisible ?? false;   // preset-scoped; reset unless set
   if (p.ui) Object.assign(app.ui, p.ui);
   if (fromVals) {
     const toVals = {};

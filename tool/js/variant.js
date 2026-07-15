@@ -561,25 +561,28 @@ export const SOLENOID_PRESETS = [
     ],
   },
   {
-    // The "look inside" beat: kill the conductor comets so the eye moves off
-    // the winding, then reveal the straight PARALLEL field threading the bore.
-    // The front copper is thinned (topCoilOpacity) so the bore lines sit just
-    // behind it for a 3D "inside the tube" read. Raise fieldBoreOpacity /
-    // lower topCoilOpacity live to push the interior field brighter.
+    // The "look inside" beat: NO current flowing, NO compass — just reveal the
+    // straight PARALLEL magnetic field threading the bore. The front copper is
+    // thinned (topCoilOpacity) so the bore lines sit just behind it for a 3D
+    // "inside the tube" read. fieldForceVisible keeps the field drawn with the
+    // current switched OFF (a static diagram — no ramp, no conductor flow).
+    // Raise fieldBoreOpacity / lower topCoilOpacity live for a brighter reveal.
     name: 'Inside the solenoid',
-    hint: 'Conductor comets dissolve off while the parallel field inside the coil fades up behind the front copper.',
+    hint: 'Current off, no compass — the parallel field inside the coil fades up behind the front copper.',
     duration: 16,
-    // Ease these keys from their current values instead of snapping (comets
-    // fade via conductorOpacity → 0; the bore field fades up as the front
-    // copper thins). presetFollow drives it over uiTransitionDur seconds.
-    uiTransition: ['conductorOpacity', 'fieldBoreOpacity', 'topCoilOpacity', 'fieldLineOpacity'],
+    // Ease the reveal (bore field fades up as the front copper thins) instead
+    // of snapping; presetFollow drives it over uiTransitionDur seconds.
+    uiTransition: ['fieldBoreOpacity', 'topCoilOpacity', 'fieldLineOpacity'],
     uiTransitionDur: 1.4,
     ui: {
       ...SOLENOID_UI,
-      currentOn: true,              // steady field to explain (no tap/timeline needed)
-      showCurrentComets: true,      // kept on so they can FADE (conductorOpacity), not snap off
-      showCurrentCometHeads: true,
-      conductorOpacity: 0.0,        // target: conductor overlay fully faded out
+      currentOn: false,             // current stays OFF (no flow, no ramp)
+      fieldForceVisible: true,      // ...but the field lines are still drawn
+      showCompass: false,           // no compass in this diagram
+      showCurrentComets: false,     // no conductor animation at all
+      showCurrentCometHeads: false,
+      showCurrentPulses: false,
+      showCurrentArrows: false,
       fieldLineOpacity: 0.65,
       fieldBoreOpacity: 0.9,
       topCoilOpacity: 0.5,

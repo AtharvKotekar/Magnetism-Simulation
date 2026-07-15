@@ -7,6 +7,7 @@ export const DEFAULT_UI = {
   showCurrentCometHeads: true,
   showCurrentArrows: false,
   showFieldLines: true,
+  fieldForceVisible: false,   // when true, field lines render with the current switched off
   showFieldPulses: false,
   showFieldComets: true,
   showFieldCometHeads: true,
