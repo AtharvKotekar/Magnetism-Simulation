@@ -770,11 +770,13 @@ const WELL_UI = {
   showCurrentArrows: true,
   // Cyan field so it reads against the bright white coil.
   fieldLineColor: '#7fc8ff', fieldMotionColor: '#aee0ff', fieldArrowColor: '#bfe8ff',
-  fieldLineStrength: 2.2, fieldLineOpacity: 0.72, fieldLineCount: 6,
-  fieldBoreOpacity: 0.9, topCoilOpacity: 1.0, conductorOpacity: 1.0,
+  fieldLineStrength: 2.2, fieldLineOpacity: 0.62, fieldLineCount: 6,
+  fieldBoreOpacity: 0.95, topCoilOpacity: 1.0, conductorOpacity: 1.0,
   fieldLineThickness: 2.6, fieldMotionThickness: 0.7,
   fieldMotionSpacing: 220, fieldCometHeadSize: 1.0,
-  fieldMaxRadiusPx: 1050,
+  // Tight loops that hug the coil (field reads as rising from the well, not
+  // spreading across the courtyard floor). Small bore -> small loops.
+  fieldMaxRadiusPx: 850,
   // Door-bar current: a small hot-orange left->right flow (a "slight indication").
   currentIndicatorColor: '#ff5a2a', currentArrowColor: '#ffcf9a',
   currentTrackWidth: 12, currentPulseSpacing: 42, currentPulseWidth: 0.16,
@@ -815,7 +817,7 @@ const WELL_VARIANT = {
   calibrationKey: 'well',
   defaultCalibration: WELL_CALIBRATION,
   fieldOverlay: 'solenoid',
-  boreRadiusPx: 240,
+  boreRadiusPx: 95,          // small bore -> tight loops that hug the coil
   currentOverlay: { path: WELL_DOOR_PATH },
   currentDirectionText(dir) {
     return dir < 0
