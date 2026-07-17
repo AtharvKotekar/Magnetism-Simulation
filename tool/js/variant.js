@@ -31,6 +31,7 @@ export function buildVariantConfig(name = 'straight') {
   if (name === 'coil') return COIL_VARIANT;
   if (name === 'bar') return BAR_VARIANT;
   if (name === 'solenoid') return SOLENOID_VARIANT;
+  if (name === 'well') return WELL_VARIANT;
   return STRAIGHT_VARIANT;
 }
 
@@ -730,4 +731,97 @@ const COIL_VARIANT = {
     axisPull: 0.0012,
   },
   presets: COIL_PRESETS,
+};
+
+// ===================== WELL (big vertical solenoid in an old well) ==========
+// A single glowing solenoid coil stands in a stone well (baked into image0).
+// We overlay: (1) the solenoid field flowing TOP -> DOWN around the coil, and
+// (2) a small LEFT -> RIGHT current across the horizontal metal bar on the door
+// (between the two short-circuit wire ends, marked red in the art). The scene is
+// frontal (no flat board), so the homography is a plain image->plane scale:
+// corners are the image rectangle. Reuses the solenoid stadium-loop field.
+const WELL_CALIBRATION = {
+  corners: { tl: [0, 0], tr: [3600, 0], br: [3600, 2028], bl: [0, 2028] },
+  hole: [2893, 900],
+  coilLeft: [2893, -260],    // top of the coil (runs off-frame; field enters here)
+  coilRight: [2893, 1790],   // visible bottom of the coil (field exits here)
+  wireTop: [2893, -260],
+  sheetW: 0.55,
+  sheetH: 0.31,              // 0.55 * 2028/3600 -> uniform px->m
+  wireHeight: 0.06,
+  holeWallR: 0.002,
+};
+
+// Door bar: current flows LEFT -> RIGHT between the two red wire ends (image px).
+// Wound RIGHT -> LEFT so that with the field's dir (=+1) the dash shader drives
+// the comets toward the path start (the right end) = a left-to-right flow.
+const WELL_DOOR_PATH = [
+  [775, 938, 0], [743, 937, 0], [711, 937, 0],
+  [679, 936, 0], [647, 936, 0], [615, 935, 0],
+];
+
+const WELL_UI = {
+  ...DEFAULT_UI,
+  showIndicator: true,
+  showCompass: false,
+  showFieldLines: true, showFieldPulses: false, showFieldComets: true,
+  showFieldCometHeads: true, showFieldArrows: false,
+  showCurrentPulses: false, showCurrentComets: true, showCurrentCometHeads: true,
+  showCurrentArrows: true,
+  // Cyan field so it reads against the bright white coil.
+  fieldLineColor: '#7fc8ff', fieldMotionColor: '#aee0ff', fieldArrowColor: '#bfe8ff',
+  fieldLineStrength: 2.2, fieldLineOpacity: 0.72, fieldLineCount: 6,
+  fieldBoreOpacity: 0.9, topCoilOpacity: 1.0, conductorOpacity: 1.0,
+  fieldLineThickness: 2.6, fieldMotionThickness: 0.7,
+  fieldMotionSpacing: 220, fieldCometHeadSize: 1.0,
+  fieldMaxRadiusPx: 1050,
+  // Door-bar current: a small hot-orange left->right flow (a "slight indication").
+  currentIndicatorColor: '#ff5a2a', currentArrowColor: '#ffcf9a',
+  currentTrackWidth: 12, currentPulseSpacing: 42, currentPulseWidth: 0.16,
+  currentCometHeadSize: 1.3, currentIndicatorStrength: 2,
+  currentArrowSize: 1.9, currentArrowStrength: 3,
+  boardShake: 0,
+};
+
+const WELL_PARAMS = {
+  fieldModel: 'barMagnet',
+  currentA: 30,
+  currentMode: 'dc',
+  currentDir: 1,             // 1 -> field points DOWN (N at bottom); verified in-scene
+  currentAutoAlign: false,
+  sprinkleCount: 1,
+  strayCount: 0,
+};
+
+export const WELL_PRESETS = [
+  {
+    name: 'Well — energized',
+    hint: 'Solenoid field threads top → down; the door bar carries current left → right.',
+    duration: 20,
+    ui: { ...WELL_UI, currentOn: true },
+    cal: { ...WELL_CALIBRATION },
+    params: { ...WELL_PARAMS },
+    timeline: [],
+  },
+];
+
+const WELL_VARIANT = {
+  name: 'well',
+  brandHTML: 'MAGNETISM <span>WELL</span>',
+  scene: {
+    assetsBase: 'assets/',
+    occluderRect: [0, 0, 3600, 2028],   // transparent placeholder (field draws over the scene)
+  },
+  calibrationKey: 'well',
+  defaultCalibration: WELL_CALIBRATION,
+  fieldOverlay: 'solenoid',
+  boreRadiusPx: 240,
+  currentOverlay: { path: WELL_DOOR_PATH },
+  currentDirectionText(dir) {
+    return dir < 0
+      ? 'field ↑ up · door current ← left'
+      : 'field ↓ down · door current → right';
+  },
+  params: WELL_PARAMS,
+  presets: WELL_PRESETS,
 };

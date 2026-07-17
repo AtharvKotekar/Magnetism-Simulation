@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Magnetism Stage — Coil Field Simulator</title>
+<title>Magnetism Stage — Well Solenoid</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../tool/css/app.css?v=coil-v77">
+<link rel="stylesheet" href="../tool/css/app.css?v=well-v1">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <div id="brand">MAGNETISM <span>COIL</span></div>
+    <div id="brand">MAGNETISM <span>WELL</span></div>
     <div id="topstats">
       <span id="stat-time">t = 0.00 s</span>
       <span id="stat-current">I = 0.0 A</span>
@@ -26,7 +26,7 @@
 
   <main id="stage-wrap">
     <div id="stage">
-      <canvas id="gl-canvas" width="2752" height="1536"></canvas>
+      <canvas id="gl-canvas" width="3600" height="2028"></canvas>
       <div id="pin-layer"></div>
     </div>
     <aside id="panel"></aside>
@@ -43,8 +43,8 @@
   </footer>
 </div>
 <script>
-  window.MAGNETISM_VARIANT = 'coil';
+  window.MAGNETISM_VARIANT = 'well';
 </script>
-<script type="module" src="../tool/js/main.js?v=coil-v77"></script>
+<script type="module" src="../tool/js/main.js?v=well-v1"></script>
 </body>
 </html>
