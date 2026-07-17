@@ -743,9 +743,13 @@ const COIL_VARIANT = {
 const WELL_CALIBRATION = {
   corners: { tl: [0, 0], tr: [3600, 0], br: [3600, 2028], bl: [0, 2028] },
   hole: [2893, 900],
-  coilLeft: [2893, -260],    // top pole (N), off-frame — field streams down FROM here
-  coilRight: [2893, 1950],   // bottom pole (S) sunk INTO the well pit — field funnels into it
-  wireTop: [2893, -260],
+  // Both poles pushed OFF-frame (top far above, bottom far below the pit) so the
+  // stadium loops' semicircle caps never enter the frame: in-frame the field reads
+  // as clean, parallel, vertical bore lines spanning top -> bottom (down into the
+  // well). No caps in frame = nothing for the sheet clip to slice into fragments.
+  coilLeft: [2893, -400],    // top pole, well above the frame
+  coilRight: [2893, 2500],   // bottom pole, well below the frame (sunk into the pit)
+  wireTop: [2893, -400],
   sheetW: 0.55,
   sheetH: 0.31,              // 0.55 * 2028/3600 -> uniform px->m
   wireHeight: 0.06,
@@ -753,11 +757,11 @@ const WELL_CALIBRATION = {
 };
 
 // Door bar: current flows LEFT -> RIGHT between the two red wire ends (image px).
-// Wound LEFT -> RIGHT so that with the field's dir (= -1) the dash shader drives
-// the comets toward the path end (the right end) = a left-to-right flow.
+// Wound RIGHT -> LEFT so that with the field's dir (= +1) the dash shader drives
+// the comets toward the path start (the right end) = a left-to-right flow.
 const WELL_DOOR_PATH = [
-  [615, 935, 0], [647, 936, 0], [679, 936, 0],
-  [711, 937, 0], [743, 937, 0], [775, 938, 0],
+  [775, 938, 0], [743, 937, 0], [711, 937, 0],
+  [679, 936, 0], [647, 936, 0], [615, 935, 0],
 ];
 
 const WELL_UI = {
@@ -770,14 +774,17 @@ const WELL_UI = {
   showCurrentArrows: true,
   // Cyan field so it reads against the bright white coil.
   fieldLineColor: '#7fc8ff', fieldMotionColor: '#aee0ff', fieldArrowColor: '#bfe8ff',
-  fieldLineStrength: 2.2, fieldLineOpacity: 0.78, fieldLineCount: 6,
-  // Interior (up-the-bore) field hidden — only the EXTERIOR lines show, and they
-  // stream down and converge INTO the pit (funnel into the hole).
-  fieldBoreOpacity: 0.0, topCoilOpacity: 1.0, conductorOpacity: 1.0,
+  fieldLineStrength: 2.2, fieldLineOpacity: 0.0, fieldLineCount: 6,
+  // Show ONLY the interior (bore) field: clean parallel vertical lines running
+  // top -> down through the coil and past it, into the well. The exterior stadium
+  // loops are hidden (opacity 0) — their in-frame return legs read as messy
+  // criss-crossing fragments once clipped, which is exactly what the user rejected.
+  fieldBoreOpacity: 0.9, topCoilOpacity: 1.0, conductorOpacity: 1.0,
   fieldLineThickness: 2.6, fieldMotionThickness: 0.7,
   fieldMotionSpacing: 220, fieldCometHeadSize: 1.0,
-  // Medium spread — fills the well area but stops short of the door.
-  fieldMaxRadiusPx: 1100,
+  // Tight max radius clips the (hidden) exterior loops so only the straight bore
+  // lines survive — a clean vertical field beam filling the coil + well.
+  fieldMaxRadiusPx: 400,
   // Door-bar current: a small hot-orange left->right flow (a "slight indication").
   currentIndicatorColor: '#ff5a2a', currentArrowColor: '#ffcf9a',
   currentTrackWidth: 12, currentPulseSpacing: 42, currentPulseWidth: 0.16,
@@ -790,7 +797,7 @@ const WELL_PARAMS = {
   fieldModel: 'barMagnet',
   currentA: 30,
   currentMode: 'dc',
-  currentDir: -1,            // -1 -> S pole at the bottom: field funnels DOWN into the pit
+  currentDir: 1,             // +1 -> bore field points DOWN (top pole above frame): streams into the pit
   currentAutoAlign: false,
   sprinkleCount: 1,
   strayCount: 0,
@@ -818,12 +825,12 @@ const WELL_VARIANT = {
   calibrationKey: 'well',
   defaultCalibration: WELL_CALIBRATION,
   fieldOverlay: 'solenoid',
-  boreRadiusPx: 170,         // medium loops that fill the well area
+  boreRadiusPx: 1250,        // wide bore -> the parallel down-lines span the coil AND the well mouth
   currentOverlay: { path: WELL_DOOR_PATH },
   currentDirectionText(dir) {
-    return dir < 0
-      ? 'field ↓ funnels into the well · door current → right'
-      : 'field ↑ out of the well · door current ← left';
+    return dir >= 0
+      ? 'field ↓ down into the well · door current → right'
+      : 'field ↑ up out of the well · door current ← left';
   },
   params: WELL_PARAMS,
   presets: WELL_PRESETS,
