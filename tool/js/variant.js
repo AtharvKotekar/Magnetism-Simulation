@@ -743,8 +743,8 @@ const COIL_VARIANT = {
 const WELL_CALIBRATION = {
   corners: { tl: [0, 0], tr: [3600, 0], br: [3600, 2028], bl: [0, 2028] },
   hole: [2893, 900],
-  coilLeft: [2893, -260],    // top of the coil (runs off-frame; field enters here)
-  coilRight: [2893, 1790],   // visible bottom of the coil (field exits here)
+  coilLeft: [2893, -260],    // top pole (N), off-frame — field streams down FROM here
+  coilRight: [2893, 1950],   // bottom pole (S) sunk INTO the well pit — field funnels into it
   wireTop: [2893, -260],
   sheetW: 0.55,
   sheetH: 0.31,              // 0.55 * 2028/3600 -> uniform px->m
@@ -753,11 +753,11 @@ const WELL_CALIBRATION = {
 };
 
 // Door bar: current flows LEFT -> RIGHT between the two red wire ends (image px).
-// Wound RIGHT -> LEFT so that with the field's dir (=+1) the dash shader drives
-// the comets toward the path start (the right end) = a left-to-right flow.
+// Wound LEFT -> RIGHT so that with the field's dir (= -1) the dash shader drives
+// the comets toward the path end (the right end) = a left-to-right flow.
 const WELL_DOOR_PATH = [
-  [775, 938, 0], [743, 937, 0], [711, 937, 0],
-  [679, 936, 0], [647, 936, 0], [615, 935, 0],
+  [615, 935, 0], [647, 936, 0], [679, 936, 0],
+  [711, 937, 0], [743, 937, 0], [775, 938, 0],
 ];
 
 const WELL_UI = {
@@ -770,13 +770,14 @@ const WELL_UI = {
   showCurrentArrows: true,
   // Cyan field so it reads against the bright white coil.
   fieldLineColor: '#7fc8ff', fieldMotionColor: '#aee0ff', fieldArrowColor: '#bfe8ff',
-  fieldLineStrength: 2.2, fieldLineOpacity: 0.62, fieldLineCount: 6,
-  fieldBoreOpacity: 0.95, topCoilOpacity: 1.0, conductorOpacity: 1.0,
+  fieldLineStrength: 2.2, fieldLineOpacity: 0.78, fieldLineCount: 6,
+  // Interior (up-the-bore) field hidden — only the EXTERIOR lines show, and they
+  // stream down and converge INTO the pit (funnel into the hole).
+  fieldBoreOpacity: 0.0, topCoilOpacity: 1.0, conductorOpacity: 1.0,
   fieldLineThickness: 2.6, fieldMotionThickness: 0.7,
   fieldMotionSpacing: 220, fieldCometHeadSize: 1.0,
-  // Tight loops that hug the coil (field reads as rising from the well, not
-  // spreading across the courtyard floor). Small bore -> small loops.
-  fieldMaxRadiusPx: 850,
+  // Medium spread — fills the well area but stops short of the door.
+  fieldMaxRadiusPx: 1100,
   // Door-bar current: a small hot-orange left->right flow (a "slight indication").
   currentIndicatorColor: '#ff5a2a', currentArrowColor: '#ffcf9a',
   currentTrackWidth: 12, currentPulseSpacing: 42, currentPulseWidth: 0.16,
@@ -789,7 +790,7 @@ const WELL_PARAMS = {
   fieldModel: 'barMagnet',
   currentA: 30,
   currentMode: 'dc',
-  currentDir: 1,             // 1 -> field points DOWN (N at bottom); verified in-scene
+  currentDir: -1,            // -1 -> S pole at the bottom: field funnels DOWN into the pit
   currentAutoAlign: false,
   sprinkleCount: 1,
   strayCount: 0,
@@ -817,12 +818,12 @@ const WELL_VARIANT = {
   calibrationKey: 'well',
   defaultCalibration: WELL_CALIBRATION,
   fieldOverlay: 'solenoid',
-  boreRadiusPx: 95,          // small bore -> tight loops that hug the coil
+  boreRadiusPx: 170,         // medium loops that fill the well area
   currentOverlay: { path: WELL_DOOR_PATH },
   currentDirectionText(dir) {
     return dir < 0
-      ? 'field ↑ up · door current ← left'
-      : 'field ↓ down · door current → right';
+      ? 'field ↓ funnels into the well · door current → right'
+      : 'field ↑ out of the well · door current ← left';
   },
   params: WELL_PARAMS,
   presets: WELL_PRESETS,
