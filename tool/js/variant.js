@@ -774,7 +774,8 @@ const WELL_UI = {
   fieldBoreOpacity: 0.9, topCoilOpacity: 1.0, conductorOpacity: 1.0,
   fieldLineThickness: 2.6, fieldMotionThickness: 0.7,
   fieldMotionSpacing: 220, fieldCometHeadSize: 1.0,
-  fieldMaxRadiusPx: 1050,
+  // Tightened from v1's 1050 to concentrate the field a touch closer to the coil.
+  fieldMaxRadiusPx: 950,
   // Door-bar current: a small hot-orange left->right flow (a "slight indication").
   currentIndicatorColor: '#ff5a2a', currentArrowColor: '#ffcf9a',
   currentTrackWidth: 12, currentPulseSpacing: 42, currentPulseWidth: 0.16,
@@ -815,7 +816,7 @@ const WELL_VARIANT = {
   calibrationKey: 'well',
   defaultCalibration: WELL_CALIBRATION,
   fieldOverlay: 'solenoid',
-  boreRadiusPx: 240,
+  boreRadiusPx: 155,         // tightened from v1's 240 (v2's 95 was too close): field hugs the coil
   currentOverlay: { path: WELL_DOOR_PATH },
   currentDirectionText(dir) {
     return dir < 0
