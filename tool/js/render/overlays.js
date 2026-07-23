@@ -1107,6 +1107,9 @@ export class Overlays {
   // (coilLeft pin) through the bore and back around the outside.
   buildSolenoidFieldLines(poleA, poleB, rMax, opts = {}) {
     const gl = this.gl;
+    // Art-direction flag: reverse the exterior loops so they read DOWNWARD
+    // (see the winding note where the exterior is built). Off = physical.
+    const exteriorDownward = !!opts.exteriorDownward;
     const verts = [];
     const dashVerts = [];
     const arrowVerts = [];
@@ -1207,6 +1210,13 @@ export class Overlays {
           const th = Math.PI * (t / CAPSEG);
           ext.push(emit(Lh + R * Math.sin(th), side * (cx + R * Math.cos(th))));
         }
+        // The dash shader plays a polyline toward DECREASING arc for dir >= 0, so
+        // the winding above renders as the physical closed loop: DOWN the bore and
+        // UP the outside. When the art direction wants every visible line to read
+        // downward (the well: field pouring into the pit), reverse the exterior so
+        // it plays top -> down the outside instead. Safe here because `emit` has
+        // not assigned `s` yet — arcLengthPlane() re-measures after the reverse.
+        if (exteriorDownward) ext.reverse();
         addClipped(ext);
       }
     }

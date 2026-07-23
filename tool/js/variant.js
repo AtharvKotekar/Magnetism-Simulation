@@ -817,6 +817,9 @@ const WELL_VARIANT = {
   defaultCalibration: WELL_CALIBRATION,
   fieldOverlay: 'solenoid',
   boreRadiusPx: 155,         // tightened from v1's 240 (v2's 95 was too close): field hugs the coil
+  // ALL field lines read downward (into the well), including the exterior return
+  // legs that would physically flow back up. Art direction beats physics here.
+  fieldExteriorDownward: true,
   currentOverlay: { path: WELL_DOOR_PATH },
   currentDirectionText(dir) {
     return dir < 0

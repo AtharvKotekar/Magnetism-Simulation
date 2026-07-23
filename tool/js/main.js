@@ -4,20 +4,20 @@
 // The ?v= tags force browsers past GitHub Pages' 10-minute cache whenever a
 // deploy changes these modules — bump them together with the tags in
 // tool/index.html and coil/index.html.
-import { createGL } from './render/gl.js?v=well-v6';
-import { SceneLayers } from './render/scene.js?v=well-v6';
-import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=well-v6';
-import { Overlays } from './render/overlays.js?v=well-v6';
+import { createGL } from './render/gl.js?v=well-v7';
+import { SceneLayers } from './render/scene.js?v=well-v7';
+import { FilingRenderer, FLOATS_PER } from './render/filings.js?v=well-v7';
+import { Overlays } from './render/overlays.js?v=well-v7';
 import { Homography, loadCalibration, saveCalibration } from './render/homography.js';
-import { CalibrationUI } from './ui/calibration.js?v=well-v6';
-import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=well-v6';
+import { CalibrationUI } from './ui/calibration.js?v=well-v7';
+import { buildPanel, diagnosticsHTML } from './ui/panel.js?v=well-v7';
 import { TimelineUI } from './ui/timelineui.js';
-import { PRESETS } from './ui/presets.js?v=well-v6';
-import { DEFAULT_UI } from './ui/defaults.js?v=well-v6';
+import { PRESETS } from './ui/presets.js?v=well-v7';
+import { DEFAULT_UI } from './ui/defaults.js?v=well-v7';
 import { Recorder } from './record/recorder.js';
 import { DEFAULT_PARAMS } from './sim/units.js';
-import { buildVariantConfig } from './variant.js?v=well-v6';
-import { CompassOverlay } from './render/compass.js?v=well-v6';
+import { buildVariantConfig } from './variant.js?v=well-v7';
+import { CompassOverlay } from './render/compass.js?v=well-v7';
 
 const variant = buildVariantConfig(window.MAGNETISM_VARIANT || 'straight');
 
@@ -61,7 +61,7 @@ async function boot() {
   rebuildHomography();
 
   // worker
-  app.worker = new Worker(new URL('./sim/worker.js?v=well-v6', import.meta.url), { type: 'module' });
+  app.worker = new Worker(new URL('./sim/worker.js?v=well-v7', import.meta.url), { type: 'module' });
   app.worker.onmessage = onWorkerMessage;
   await workerReady();
   pushRenderOptions();
@@ -254,6 +254,9 @@ function rebuildFieldOverlay() {
         return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
       })(),
       boreR: (app.variant.boreRadiusPx ?? 90) * pxToM,
+      // Well: every visible field line must read downward (into the pit), so the
+      // exterior return legs are wound to flow down instead of the physical up.
+      exteriorDownward: !!app.variant.fieldExteriorDownward,
       paths: app.variant.barFieldPaths?.map((path) => path.map(([px, py]) => {
         const q = app.homog.toPlane(px, py);
         return { x: q[0], y: q[1] };
